@@ -1,3 +1,4 @@
+import { useRouter } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -7,13 +8,18 @@ import { spacing } from '@/theme/spacing';
 import { typography } from '@/theme/typography';
 
 export default function StartWorkoutScreen() {
+  const router = useRouter();
+
   return (
     <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
       <View style={styles.container}>
         <Text style={styles.title}>Start Workout</Text>
 
         <View style={styles.actions}>
-          <Pressable accessibilityRole="button" style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push('/select-exercise')}
+            style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}>
             <Text style={styles.buttonText}>Add Exercise</Text>
           </Pressable>
           <Pressable

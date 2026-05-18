@@ -25,6 +25,7 @@ type RoutinesContextValue = {
   duplicateRoutine: (id: string) => string | null;
   getRoutine: (id: string) => Routine | undefined;
   moveRoutine: (id: string, direction: 'up' | 'down') => void;
+  moveRoutineToIndex: (id: string, targetIndex: number) => void;
   reorderRoutines: () => void;
   routines: Routine[];
   setActiveRoutineId: (id: string | null) => void;
@@ -32,6 +33,7 @@ type RoutinesContextValue = {
   addExercise: (routineId: string, name: string) => void;
   removeExercise: (routineId: string, exerciseId: string) => void;
   moveExercise: (routineId: string, exerciseId: string, direction: 'up' | 'down') => void;
+  moveExerciseToIndex: (routineId: string, exerciseId: string, targetIndex: number) => void;
   updateExercise: (
     routineId: string,
     exerciseId: string,
@@ -143,6 +145,18 @@ export function RoutinesProvider({ children }: { children: ReactNode }) {
           return routinesCopy;
         });
       },
+      moveRoutineToIndex: (id, targetIndex) => {
+        setRoutines((current) => {
+          const index = current.findIndex((routine) => routine.id === id);
+          if (index < 0) return current;
+
+          const routinesCopy = [...current];
+          const [routine] = routinesCopy.splice(index, 1);
+          const boundedIndex = Math.max(0, Math.min(targetIndex, routinesCopy.length));
+          routinesCopy.splice(boundedIndex, 0, routine);
+          return routinesCopy;
+        });
+      },
       reorderRoutines: () => {
         setRoutines((current) => [...current].reverse());
       },
@@ -184,6 +198,22 @@ export function RoutinesProvider({ children }: { children: ReactNode }) {
             const exercises = [...routine.exercises];
             const [exercise] = exercises.splice(index, 1);
             exercises.splice(nextIndex, 0, exercise);
+            return { ...routine, exercises };
+          }),
+        );
+      },
+      moveExerciseToIndex: (routineId, exerciseId, targetIndex) => {
+        setRoutines((current) =>
+          current.map((routine) => {
+            if (routine.id !== routineId) return routine;
+
+            const index = routine.exercises.findIndex((exercise) => exercise.id === exerciseId);
+            if (index < 0) return routine;
+
+            const exercises = [...routine.exercises];
+            const [exercise] = exercises.splice(index, 1);
+            const boundedIndex = Math.max(0, Math.min(targetIndex, exercises.length));
+            exercises.splice(boundedIndex, 0, exercise);
             return { ...routine, exercises };
           }),
         );
