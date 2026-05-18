@@ -1,14 +1,11 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
-  LayoutAnimation,
   PanResponder,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
-  UIManager,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -18,11 +15,8 @@ import { colors } from "@/theme/colors";
 import { radius } from "@/theme/radius";
 import { spacing } from "@/theme/spacing";
 
-const ROW_HEIGHT = 62;
-
-if (Platform.OS === "android") {
-  UIManager.setLayoutAnimationEnabledExperimental?.(true);
-}
+// The true physical height of a row: 62 (height) + 4 (marginBottom)
+const ITEM_HEIGHT = 66;
 
 function BackButton({ onPress }: { onPress: () => void }) {
   return (
@@ -38,105 +32,147 @@ function BackButton({ onPress }: { onPress: () => void }) {
 }
 
 function ReorderRow({
-  active,
-  currentIndex,
+  draggingIndex,
   exercise,
+  hoverIndex,
+  index,
   itemCount,
   onDragStart,
+  onDrop,
   onHoverIndexChange,
-  onRelease,
-  startIndex,
 }: {
-  active: boolean;
-  currentIndex: number;
+  draggingIndex: number | null;
   exercise: RoutineExercise;
+  hoverIndex: number | null;
+  index: number;
   itemCount: number;
-  onDragStart: () => void;
+  onDragStart: (index: number) => void;
+  onDrop: (fromIndex: number, toIndex: number) => void;
   onHoverIndexChange: (index: number) => void;
-  onRelease: () => void;
-  startIndex: number | null;
 }) {
-  const dragY = useRef(new Animated.Value(0)).current;
-  const targetIndexRef = useRef<number | null>(null);
+  const isDragging = draggingIndex === index;
 
-  // 1. Create a ref to hold all props that might change during a drag
+  // Determine if this specific "bystander" card needs to shift up or down to make room
+  const isShiftedUp =
+    draggingIndex !== null &&
+    hoverIndex !== null &&
+    draggingIndex < index &&
+    hoverIndex >= index;
+  const isShiftedDown =
+    draggingIndex !== null &&
+    hoverIndex !== null &&
+    draggingIndex > index &&
+    hoverIndex <= index;
+
+  const dragY = useRef(new Animated.Value(0)).current;
+  const shiftAnim = useRef(new Animated.Value(0)).current;
+
+  // THE FIX: Store EVERYTHING in the ref so the PanResponder never gets destroyed
   const gestureStateRef = useRef({
-    currentIndex,
-    startIndex,
+    index,
+    hoverIndex,
     onDragStart,
     onHoverIndexChange,
-    onRelease,
+    onDrop,
   });
 
-  // 2. Keep the ref perfectly in sync with the latest render
+  // Keep it synced with the latest render
   gestureStateRef.current = {
-    currentIndex,
-    startIndex,
+    index,
+    hoverIndex,
     onDragStart,
     onHoverIndexChange,
-    onRelease,
+    onDrop,
   };
+
+  // Smoothly slide the bystander cards out of the way
+  useEffect(() => {
+    let toValue = 0;
+    if (isShiftedUp) toValue = -ITEM_HEIGHT;
+    else if (isShiftedDown) toValue = ITEM_HEIGHT;
+
+    Animated.spring(shiftAnim, {
+      toValue,
+      useNativeDriver: true,
+      bounciness: 0,
+      speed: 16,
+    }).start();
+  }, [isShiftedUp, isShiftedDown, shiftAnim]);
 
   const panResponder = useMemo(
     () =>
       PanResponder.create({
         onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dy) > 6,
         onPanResponderGrant: () => {
-          const { currentIndex, onDragStart } = gestureStateRef.current;
-          targetIndexRef.current = currentIndex;
-          onDragStart();
-          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+          gestureStateRef.current.onDragStart(gestureStateRef.current.index);
         },
         onPanResponderMove: (_, gesture) => {
-          const { currentIndex, startIndex, onHoverIndexChange } =
-            gestureStateRef.current;
-          const dragOriginIndex = startIndex ?? currentIndex;
           dragY.setValue(gesture.dy);
+          const currentIndex = gestureStateRef.current.index;
 
           const nextIndex = Math.max(
             0,
             Math.min(
               itemCount - 1,
-              dragOriginIndex + Math.round(gesture.dy / ROW_HEIGHT),
+              currentIndex + Math.round(gesture.dy / ITEM_HEIGHT),
             ),
           );
 
-          if (nextIndex !== targetIndexRef.current) {
-            targetIndexRef.current = nextIndex;
-            LayoutAnimation.configureNext(
-              LayoutAnimation.Presets.easeInEaseOut,
-            );
-            onHoverIndexChange(nextIndex);
+          if (nextIndex !== gestureStateRef.current.hoverIndex) {
+            gestureStateRef.current.onHoverIndexChange(nextIndex);
           }
         },
         onPanResponderRelease: () => {
-          Animated.spring(dragY, { toValue: 0, useNativeDriver: true }).start();
-          targetIndexRef.current = null;
-          gestureStateRef.current.onRelease();
+          const finalHover =
+            gestureStateRef.current.hoverIndex ?? gestureStateRef.current.index;
+          const dropOffset =
+            (finalHover - gestureStateRef.current.index) * ITEM_HEIGHT;
+
+          // Smoothly snap the dragged card into its final resting slot
+          Animated.spring(dragY, {
+            toValue: dropOffset,
+            useNativeDriver: true,
+            bounciness: 0,
+            speed: 20,
+          }).start(() => {
+            dragY.setValue(0);
+            shiftAnim.setValue(0);
+            gestureStateRef.current.onDrop(
+              gestureStateRef.current.index,
+              finalHover,
+            );
+          });
         },
         onPanResponderTerminate: () => {
-          Animated.spring(dragY, { toValue: 0, useNativeDriver: true }).start();
-          targetIndexRef.current = null;
-          gestureStateRef.current.onRelease();
+          Animated.spring(dragY, { toValue: 0, useNativeDriver: true }).start(
+            () => {
+              dragY.setValue(0);
+              shiftAnim.setValue(0);
+              gestureStateRef.current.onDrop(
+                gestureStateRef.current.index,
+                gestureStateRef.current.index,
+              );
+            },
+          );
         },
       }),
-    [dragY, itemCount], // Only include values that NEVER change
+    // NO CALLBACKS IN THIS ARRAY! This prevents the glitching mid-drag.
+    [dragY, shiftAnim, itemCount],
   );
 
-  // 3. Calculate and subtract the layout shift to prevent double-movement
-  const layoutOffset =
-    startIndex !== null ? (currentIndex - startIndex) * ROW_HEIGHT : 0;
-  const translateY = active ? Animated.subtract(dragY, layoutOffset) : 0;
+  const translateY = isDragging ? dragY : shiftAnim;
 
   return (
     <Animated.View
       style={[
         styles.row,
-        active && styles.rowActive,
-        { transform: [{ translateY }] },
+        isDragging && styles.rowActive,
+        {
+          transform: [{ translateY }],
+          zIndex: isDragging ? 10 : 1,
+        },
       ]}
     >
-      <View style={[styles.positionDot, active && styles.positionDotActive]} />
       <Text style={styles.rowText}>{exercise.name}</Text>
       <View {...panResponder.panHandlers} style={styles.handle}>
         <View style={styles.handleLine} />
@@ -152,20 +188,10 @@ export default function ReorderExercisesScreen() {
   const { getRoutine, moveExerciseToIndex } = useRoutines();
   const routine = getRoutine(id);
 
-  const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [dragStartIndex, setDragStartIndex] = useState<number | null>(null);
+  const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
-  const visibleExercises = useMemo(() => {
-    const exercises = routine?.exercises ?? [];
-    if (!draggingId || hoverIndex === null) return exercises;
-    const next = [...exercises];
-    const from = next.findIndex((exercise) => exercise.id === draggingId);
-    if (from < 0) return exercises;
-    const [exercise] = next.splice(from, 1);
-    next.splice(hoverIndex, 0, exercise);
-    return next;
-  }, [draggingId, hoverIndex, routine?.exercises]);
+  const exercises = routine?.exercises ?? [];
 
   return (
     <SafeAreaView edges={["top", "bottom"]} style={styles.safeArea}>
@@ -176,30 +202,28 @@ export default function ReorderExercisesScreen() {
         </View>
 
         <View style={styles.list}>
-          {visibleExercises.map((exercise, index) => (
+          {exercises.map((exercise, index) => (
             <ReorderRow
-              active={exercise.id === draggingId}
-              currentIndex={index}
-              exercise={exercise}
-              itemCount={routine?.exercises?.length ?? 0}
               key={exercise.id}
-              onDragStart={() => {
-                setDraggingId(exercise.id);
-                setDragStartIndex(index);
-                setHoverIndex(index);
+              draggingIndex={draggingIndex}
+              exercise={exercise}
+              hoverIndex={hoverIndex}
+              index={index}
+              itemCount={exercises.length}
+              onDragStart={(idx) => {
+                setDraggingIndex(idx);
+                setHoverIndex(idx);
               }}
-              onHoverIndexChange={(nextIndex) => {
-                setHoverIndex(nextIndex);
+              onHoverIndexChange={(idx) => {
+                setHoverIndex(idx);
               }}
-              onRelease={() => {
-                if (draggingId !== null && hoverIndex !== null) {
-                  moveExerciseToIndex(id, draggingId, hoverIndex);
+              onDrop={(fromIdx, toIdx) => {
+                if (fromIdx !== toIdx) {
+                  moveExerciseToIndex(id, exercises[fromIdx].id, toIdx);
                 }
-                setDraggingId(null);
-                setDragStartIndex(null);
+                setDraggingIndex(null);
                 setHoverIndex(null);
               }}
-              startIndex={dragStartIndex}
             />
           ))}
         </View>
@@ -241,32 +265,21 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     flexDirection: "row",
     justifyContent: "space-between",
-    minHeight: ROW_HEIGHT,
+    height: 62,
     marginBottom: 4,
-    paddingLeft: 12,
-    zIndex: 1,
+    paddingLeft: 20,
   },
   rowActive: {
     backgroundColor: colors.surfacePressed,
     borderColor: colors.accent,
     borderWidth: StyleSheet.hairlineWidth,
-    zIndex: 5,
-  },
-  positionDot: {
-    backgroundColor: colors.border,
-    borderRadius: radius.circle,
-    height: 7,
-    marginRight: 10,
-    width: 7,
-  },
-  positionDotActive: {
-    backgroundColor: colors.accent,
+    elevation: 5,
   },
   rowText: {
     color: colors.textPrimary,
     flex: 1,
     fontSize: 18,
-    fontWeight: "400",
+    fontWeight: "500",
     letterSpacing: 0,
   },
   handle: {

@@ -196,7 +196,7 @@ const styles = StyleSheet.create({
   },
   exerciseText: {
     color: colors.textPrimary,
-    fontSize: 25,
+    fontSize: 27,
     fontWeight: '400',
     letterSpacing: 0,
   },

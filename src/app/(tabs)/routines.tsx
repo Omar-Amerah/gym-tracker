@@ -1,7 +1,8 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
+  Animated,
   Modal,
   Pressable,
   ScrollView,
@@ -14,12 +15,98 @@ import {
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 
+import { AppHeader } from "@/components/app-header";
 import { useRoutines } from "@/state/routines";
 import { colors } from "@/theme/colors";
 import { radius } from "@/theme/radius";
 import { spacing } from "@/theme/spacing";
-import { typography } from "@/theme/typography";
 
+// --- NEW REUSABLE BOTTOM SHEET COMPONENT ---
+function BottomSheet({
+  children,
+  insetsBottom,
+  onClose,
+  visible,
+}: {
+  children: React.ReactNode;
+  insetsBottom: number;
+  onClose: () => void;
+  visible: boolean;
+}) {
+  const [showModal, setShowModal] = useState(visible);
+  const translateY = useRef(new Animated.Value(400)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current; // New opacity value
+
+  useEffect(() => {
+    if (visible) {
+      setShowModal(true);
+      Animated.parallel([
+        Animated.spring(translateY, {
+          toValue: 0,
+          useNativeDriver: true,
+          bounciness: 0,
+          speed: 14,
+        }),
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else {
+      Animated.parallel([
+        Animated.timing(translateY, {
+          toValue: 400,
+          duration: 250, // Slightly slower slide for a smooth exit
+          useNativeDriver: true,
+        }),
+        Animated.timing(fadeAnim, {
+          toValue: 0,
+          duration: 250, // Perfectly synced fade out
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        setShowModal(false);
+      });
+    }
+  }, [visible, translateY, fadeAnim]);
+
+  if (!showModal) return null;
+
+  return (
+    <Modal
+      animationType="none" // Turn off native modal fading!
+      onRequestClose={onClose}
+      transparent
+      visible={showModal}
+    >
+      <View style={styles.sheetContainer}>
+        {/* Custom Animated Background */}
+        <Animated.View style={[styles.scrimOverlay, { opacity: fadeAnim }]} />
+
+        {/* Invisible tap target to dismiss */}
+        <Pressable
+          accessibilityLabel="Close menu"
+          onPress={onClose}
+          style={StyleSheet.absoluteFillObject}
+        />
+
+        {/* Sliding Sheet */}
+        <Animated.View
+          style={[
+            styles.sheet,
+            {
+              paddingBottom: 34 + insetsBottom,
+              transform: [{ translateY }],
+            },
+          ]}
+        >
+          {children}
+        </Animated.View>
+      </View>
+    </Modal>
+  );
+}
 export default function RoutinesScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -51,28 +138,7 @@ export default function RoutinesScreen() {
   return (
     <SafeAreaView edges={["top"]} style={styles.safeArea}>
       <View style={styles.screenRoot}>
-        <View style={styles.header}>
-          <Pressable
-            accessibilityLabel="Open menu"
-            accessibilityRole="button"
-            style={styles.iconButton}
-          >
-            <View style={styles.menuLine} />
-            <View style={styles.menuLine} />
-            <View style={styles.menuLine} />
-          </Pressable>
-          <Text style={styles.title}>Routines</Text>
-          <Pressable
-            accessibilityLabel="Routine list options"
-            accessibilityRole="button"
-            onPress={() => setMenuOpen(true)}
-            style={styles.moreButton}
-          >
-            <View style={styles.moreDot} />
-            <View style={styles.moreDot} />
-            <View style={styles.moreDot} />
-          </Pressable>
-        </View>
+        <AppHeader onMorePress={() => setMenuOpen(true)} title="Routines" />
 
         <ScrollView
           contentContainerStyle={styles.scrollContent}
@@ -80,15 +146,8 @@ export default function RoutinesScreen() {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.list}>
-            {routines.map((routine, index) => (
-              <View
-                key={routine.id}
-                style={[
-                  styles.routineRow,
-                  index === 0 && styles.firstRow,
-                  index === routines.length - 1 && styles.lastRow,
-                ]}
-              >
+            {routines.map((routine) => (
+              <View key={routine.id} style={styles.routineRow}>
                 <Pressable
                   accessibilityRole="button"
                   onPress={() => openRoutine(routine.id)}
@@ -134,139 +193,119 @@ export default function RoutinesScreen() {
           </View>
         </Pressable>
 
-        <Modal
-          animationType="slide"
-          transparent
+        {/* Global Menu Bottom Sheet */}
+        <BottomSheet
+          insetsBottom={insets.bottom}
+          onClose={() => setMenuOpen(false)}
           visible={menuOpen}
-          onRequestClose={() => setMenuOpen(false)}
         >
-          <View style={styles.sheetScrim}>
-            <Pressable
-              accessibilityLabel="Close menu"
-              style={styles.scrimDismiss}
-              onPress={() => setMenuOpen(false)}
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => {
+              setMenuOpen(false);
+              router.push("/reorder-routines");
+            }}
+            style={styles.sheetAction}
+          >
+            <MaterialCommunityIcons
+              color={colors.textPrimary}
+              name="sort"
+              size={24}
+              style={styles.sheetIcon}
             />
-            <View style={[styles.sheet, { paddingBottom: 34 + insets.bottom }]}>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => {
-                  setMenuOpen(false);
-                  router.push("/reorder-routines");
-                }}
-                style={styles.sheetAction}
-              >
-                <MaterialCommunityIcons
-                  color={colors.textPrimary}
-                  name="sort"
-                  size={24}
-                  style={styles.sheetIcon}
-                />
-                <Text style={styles.sheetText}>Reorder</Text>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => {
-                  if (routines[0]) duplicateRoutine(routines[0].id);
-                  setMenuOpen(false);
-                }}
-                style={styles.sheetAction}
-              >
-                <MaterialCommunityIcons
-                  color={colors.textPrimary}
-                  name="content-copy"
-                  size={22}
-                  style={styles.sheetIcon}
-                />
-                <Text style={styles.sheetText}>Copy</Text>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => {
-                  if (routines[0]) deleteRoutine(routines[0].id);
-                  setMenuOpen(false);
-                }}
-                style={styles.sheetAction}
-              >
-                <MaterialCommunityIcons
-                  color="#ffaaa1"
-                  name="trash-can-outline"
-                  size={24}
-                  style={styles.sheetIcon}
-                />
-                <Text style={[styles.sheetText, styles.deleteText]}>
-                  Delete
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-        </Modal>
+            <Text style={styles.sheetText}>Reorder</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => {
+              if (routines[0]) duplicateRoutine(routines[0].id);
+              setMenuOpen(false);
+            }}
+            style={styles.sheetAction}
+          >
+            <MaterialCommunityIcons
+              color={colors.textPrimary}
+              name="content-copy"
+              size={22}
+              style={styles.sheetIcon}
+            />
+            <Text style={styles.sheetText}>Copy</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => {
+              if (routines[0]) deleteRoutine(routines[0].id);
+              setMenuOpen(false);
+            }}
+            style={styles.sheetAction}
+          >
+            <MaterialCommunityIcons
+              color="#ffaaa1"
+              name="trash-can-outline"
+              size={24}
+              style={styles.sheetIcon}
+            />
+            <Text style={[styles.sheetText, styles.deleteText]}>Delete</Text>
+          </Pressable>
+        </BottomSheet>
 
-        <Modal
-          animationType="slide"
-          transparent
+        {/* Selected Routine Options Bottom Sheet */}
+        <BottomSheet
+          insetsBottom={insets.bottom}
+          onClose={() => setSelectedRoutineId(null)}
           visible={selectedRoutineId !== null}
-          onRequestClose={() => setSelectedRoutineId(null)}
         >
-          <View style={styles.sheetScrim}>
-            <Pressable
-              accessibilityLabel="Close routine options"
-              style={styles.scrimDismiss}
-              onPress={() => setSelectedRoutineId(null)}
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => {
+              setSelectedRoutineId(null);
+              router.push("/reorder-routines");
+            }}
+            style={styles.sheetAction}
+          >
+            <MaterialCommunityIcons
+              color={colors.textPrimary}
+              name="sort"
+              size={24}
+              style={styles.sheetIcon}
             />
-            <View style={[styles.sheet, { paddingBottom: 34 + insets.bottom }]}>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => {
-                  setSelectedRoutineId(null);
-                  router.push("/reorder-routines");
-                }}
-                style={styles.sheetAction}
-              >
-                <MaterialCommunityIcons
-                  color={colors.textPrimary}
-                  name="sort"
-                  size={24}
-                  style={styles.sheetIcon}
-                />
-                <Text style={styles.sheetText}>Reorder</Text>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => {
-                  if (selectedRoutineId) duplicateRoutine(selectedRoutineId);
-                  setSelectedRoutineId(null);
-                }}
-                style={styles.sheetAction}
-              >
-                <MaterialCommunityIcons
-                  color={colors.textPrimary}
-                  name="content-copy"
-                  size={22}
-                  style={styles.sheetIcon}
-                />
-                <Text style={styles.sheetText}>Copy</Text>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => {
-                  if (selectedRoutineId) deleteRoutine(selectedRoutineId);
-                  setSelectedRoutineId(null);
-                }}
-                style={styles.sheetAction}
-              >
-                <MaterialCommunityIcons
-                  color="#ffaaa1"
-                  name="trash-can-outline"
-                  size={24}
-                  style={styles.sheetIcon}
-                />
-                <Text style={[styles.sheetText, styles.deleteText]}>
-                  Delete{selectedRoutine ? ` ${selectedRoutine.name}` : ""}
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-        </Modal>
+            <Text style={styles.sheetText}>Reorder</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => {
+              if (selectedRoutineId) duplicateRoutine(selectedRoutineId);
+              setSelectedRoutineId(null);
+            }}
+            style={styles.sheetAction}
+          >
+            <MaterialCommunityIcons
+              color={colors.textPrimary}
+              name="content-copy"
+              size={22}
+              style={styles.sheetIcon}
+            />
+            <Text style={styles.sheetText}>Copy</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => {
+              if (selectedRoutineId) deleteRoutine(selectedRoutineId);
+              setSelectedRoutineId(null);
+            }}
+            style={styles.sheetAction}
+          >
+            <MaterialCommunityIcons
+              color="#ffaaa1"
+              name="trash-can-outline"
+              size={24}
+              style={styles.sheetIcon}
+            />
+            <Text style={[styles.sheetText, styles.deleteText]}>
+              Delete{selectedRoutine ? ` ${selectedRoutine.name}` : ""}
+            </Text>
+          </Pressable>
+        </BottomSheet>
       </View>
     </SafeAreaView>
   );
@@ -280,7 +319,7 @@ const styles = StyleSheet.create({
   screenRoot: {
     flex: 1,
     backgroundColor: colors.background,
-    position: "relative", // The fix! Respects the safe area padding
+    position: "relative",
   },
   scroll: {
     flex: 1,
@@ -290,71 +329,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xxl,
     paddingTop: 0,
   },
-  header: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 16,
-    paddingBottom: 26,
-    paddingHorizontal: 16,
-    paddingTop: 10,
-  },
-  iconButton: {
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    height: 30,
-    justifyContent: "center",
-    width: 30,
-  },
-  menuLine: {
-    backgroundColor: colors.accent,
-    borderRadius: radius.xs,
-    height: 2,
-    marginVertical: 2,
-    width: 19,
-  },
-  title: {
-    color: colors.textPrimary,
-    flex: 1,
-    letterSpacing: 0,
-    ...typography.monthTitle,
-  },
-  moreButton: {
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    gap: 2,
-    height: 30,
-    justifyContent: "center",
-    width: 30,
-  },
-  moreDot: {
-    backgroundColor: colors.accent,
-    borderRadius: radius.circle,
-    height: 3,
-    width: 3,
-  },
   list: {
     paddingHorizontal: 0,
   },
   routineRow: {
     alignItems: "center",
     backgroundColor: colors.surface,
-    borderBottomColor: colors.border,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderRadius: 16,
+    marginBottom: 12,
     flexDirection: "row",
     justifyContent: "space-between",
-    minHeight: 78,
+    minHeight: 82,
     overflow: "hidden",
-  },
-  firstRow: {
-    borderTopLeftRadius: 14,
-    borderTopRightRadius: 14,
-  },
-  lastRow: {
-    borderBottomWidth: 0,
-    borderBottomLeftRadius: 14,
-    borderBottomRightRadius: 14,
   },
   rowPressed: {
     backgroundColor: colors.surfacePressed,
@@ -374,8 +360,8 @@ const styles = StyleSheet.create({
   },
   routineMeta: {
     color: colors.textMuted,
-    fontSize: 11,
-    fontWeight: "600",
+    fontSize: 13,
+    fontWeight: "400",
     letterSpacing: 0,
     marginTop: 4,
   },
@@ -396,9 +382,9 @@ const styles = StyleSheet.create({
   fab: {
     alignItems: "center",
     backgroundColor: colors.fabBackground,
-    borderRadius: 16,
-    bottom: 12, // Lowered exactly as requested
-    height: 58,
+    borderRadius: 24,
+    bottom: 16,
+    height: 72,
     justifyContent: "center",
     position: "absolute",
     right: 24,
@@ -407,7 +393,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.34,
     shadowRadius: 12,
     elevation: 5,
-    width: 60,
+    width: 72,
     zIndex: 20,
   },
   addButtonPressed: {
@@ -416,31 +402,31 @@ const styles = StyleSheet.create({
   },
   plusIcon: {
     alignItems: "center",
-    height: 22,
+    height: 28,
     justifyContent: "center",
-    width: 22,
+    width: 28,
   },
   plusVertical: {
     backgroundColor: colors.background,
     borderRadius: radius.xs,
-    height: 22,
+    height: 28,
     position: "absolute",
-    width: 2,
+    width: 3,
   },
   plusHorizontal: {
     backgroundColor: colors.background,
     borderRadius: radius.xs,
-    height: 2,
+    height: 3,
     position: "absolute",
-    width: 22,
+    width: 28,
   },
-  sheetScrim: {
-    backgroundColor: "rgba(0, 0, 0, 0.36)",
+  sheetContainer: {
     flex: 1,
     justifyContent: "flex-end",
   },
-  scrimDismiss: {
+  scrimOverlay: {
     ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0, 0, 0, 0.4)", // The dark dimming color
   },
   sheet: {
     backgroundColor: "#06100f",

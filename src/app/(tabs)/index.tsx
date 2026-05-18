@@ -2,6 +2,7 @@ import { useRouter } from "expo-router";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { AppHeader } from "@/components/app-header";
 import { colors } from "@/theme/colors";
 import { radius } from "@/theme/radius";
 import { spacing } from "@/theme/spacing";
@@ -74,24 +75,13 @@ export default function LogScreen() {
   return (
     <SafeAreaView edges={["top"]} style={styles.safeArea}>
       <View style={styles.screenRoot}>
+        <AppHeader title="Logged Workouts" />
+
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           style={styles.scroll}
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.header}>
-            <Pressable
-              accessibilityLabel="Open menu"
-              accessibilityRole="button"
-              style={styles.iconButton}
-            >
-              <View style={styles.menuLine} />
-              <View style={styles.menuLine} />
-              <View style={styles.menuLine} />
-            </Pressable>
-            <Text style={styles.monthTitle}>May</Text>
-          </View>
-
           {workouts.map((workout, index) => (
             <View key={workout.id} style={styles.entry}>
               <View style={styles.dateColumn}>
@@ -161,34 +151,6 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingTop: 0,
-  },
-  header: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 16,
-    paddingBottom: 26,
-    paddingHorizontal: 16,
-    paddingTop: 10,
-  },
-  iconButton: {
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    height: 30,
-    justifyContent: "center",
-    width: 30,
-  },
-  menuLine: {
-    backgroundColor: colors.accent,
-    borderRadius: radius.xs,
-    height: 2,
-    marginVertical: 2,
-    width: 19,
-  },
-  monthTitle: {
-    color: colors.textPrimary,
-    letterSpacing: 0,
-    ...typography.monthTitle,
   },
   entry: {
     flexDirection: "row",

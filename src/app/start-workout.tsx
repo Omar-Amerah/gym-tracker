@@ -72,12 +72,10 @@ const styles = StyleSheet.create({
   },
   buttonText: {
     color: colors.textPrimary,
-    letterSpacing: 0,
     ...typography.exercise,
   },
   finishButtonText: {
     color: colors.background,
-    letterSpacing: 0,
     ...typography.exercise,
   },
 });
