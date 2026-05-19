@@ -78,6 +78,7 @@ async function createSchema(db: SQLite.SQLiteDatabase) {
       endTime TEXT,
       durationMinutes INTEGER,
       notes TEXT,
+      status TEXT NOT NULL DEFAULT 'draft',
       createdAt TEXT NOT NULL,
       updatedAt TEXT NOT NULL
     );
@@ -117,6 +118,20 @@ async function createSchema(db: SQLite.SQLiteDatabase) {
     CREATE INDEX IF NOT EXISTS idx_workout_exercises_workout ON workout_exercises(workoutId, sortOrder);
     CREATE INDEX IF NOT EXISTS idx_workout_sets_exercise ON workout_sets(workoutExerciseId, setOrder);
   `);
+  await migrateSchema(db);
+}
+
+async function migrateSchema(db: SQLite.SQLiteDatabase) {
+  const workoutColumns = await db.getAllAsync<{ name: string }>(
+    "PRAGMA table_info(workouts)",
+  );
+  const hasStatus = workoutColumns.some((column) => column.name === "status");
+
+  if (!hasStatus) {
+    await db.execAsync(
+      "ALTER TABLE workouts ADD COLUMN status TEXT NOT NULL DEFAULT 'completed';",
+    );
+  }
 }
 
 async function seedIfEmpty(db: SQLite.SQLiteDatabase) {

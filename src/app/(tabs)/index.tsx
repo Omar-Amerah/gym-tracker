@@ -77,6 +77,12 @@ export default function LogScreen() {
 
               <Pressable
                 accessibilityRole="button"
+                onPress={() =>
+                  router.push({
+                    pathname: "/workout/[workoutId]",
+                    params: { workoutId: workout.id },
+                  })
+                }
                 style={({ pressed }) => [
                   styles.card,
                   pressed && styles.cardPressed,
@@ -84,11 +90,15 @@ export default function LogScreen() {
               >
                 <View style={styles.cardHeader}>
                   <Text style={styles.workoutTitle}>{workout.name}</Text>
-                  <Text style={styles.duration}>
-                    {workout.durationMinutes === null
-                      ? "-- min"
-                      : `${workout.durationMinutes} min`}
-                  </Text>
+                  {workout.status === "draft" ? (
+                    <Text style={styles.draftBadge}>In Progress</Text>
+                  ) : (
+                    <Text style={styles.duration}>
+                      {workout.durationMinutes === null
+                        ? "-- min"
+                        : `${workout.durationMinutes} min`}
+                    </Text>
+                  )}
                 </View>
 
                 <View style={styles.exerciseList}>
@@ -106,7 +116,7 @@ export default function LogScreen() {
         <Pressable
           accessibilityLabel="Start workout"
           accessibilityRole="button"
-          onPress={() => router.push("/start-workout")}
+          onPress={() => router.push("/workout/new")}
           style={({ pressed }) => [
             styles.floatingAddButton,
             pressed && styles.addButtonPressed,
@@ -212,6 +222,19 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     backgroundColor: colors.border,
     borderRadius: radius.pill,
+    letterSpacing: 0,
+    marginTop: 0,
+    overflow: "hidden",
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    ...typography.duration,
+  },
+  draftBadge: {
+    color: colors.accent,
+    backgroundColor: "rgba(91, 212, 224, 0.12)",
+    borderColor: "rgba(91, 212, 224, 0.35)",
+    borderRadius: radius.pill,
+    borderWidth: StyleSheet.hairlineWidth,
     letterSpacing: 0,
     marginTop: 0,
     overflow: "hidden",

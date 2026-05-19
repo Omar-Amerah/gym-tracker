@@ -19,7 +19,10 @@ import {
 import { AppHeader } from "@/components/app-header";
 import { listExercisesByCategory } from "@/db/exercisesRepository";
 import type { ExerciseRecord } from "@/db/schema";
-import { replaceActiveWorkoutExercise } from "@/state/activeWorkoutSelection";
+import {
+  addActiveWorkoutExercise,
+  replaceActiveWorkoutExercise,
+} from "@/state/activeWorkoutSelection";
 import { useRoutines } from "@/state/routines";
 import { colors } from "@/theme/colors";
 import { spacing } from "@/theme/spacing";
@@ -111,6 +114,7 @@ export default function CategoryExercisesScreen() {
     mode?: string;
   }>();
   const { activeRoutineId, addExercise } = useRoutines();
+  const isActiveWorkoutAdd = mode === "active-workout-add";
   const isActiveWorkoutReplacement = mode === "active-workout-replace";
 
   const [exerciseMode, setExerciseMode] = useState<"regular" | "superset">(
@@ -146,14 +150,14 @@ export default function CategoryExercisesScreen() {
   }, [category, searchQuery]);
 
   function selectExercise(exercise: ExerciseRecord) {
-    if (isActiveWorkoutReplacement && activeWorkoutRoutineId) {
-      const replaced = replaceActiveWorkoutExercise(
-        activeWorkoutRoutineId,
-        exercise,
-      );
-      if (replaced) {
-        router.dismiss(2);
-      }
+    if (
+      activeWorkoutRoutineId &&
+      (isActiveWorkoutReplacement || isActiveWorkoutAdd)
+    ) {
+      const handled = isActiveWorkoutReplacement
+        ? replaceActiveWorkoutExercise(activeWorkoutRoutineId, exercise)
+        : addActiveWorkoutExercise(activeWorkoutRoutineId, exercise);
+      if (handled) router.dismiss(2);
       return;
     }
 
@@ -209,7 +213,7 @@ export default function CategoryExercisesScreen() {
             leftAction="back"
             onBackPress={() =>
               backOrReplace(
-                isActiveWorkoutReplacement
+                isActiveWorkoutReplacement || isActiveWorkoutAdd
                   ? {
                       pathname: "/select-exercise",
                       params: {

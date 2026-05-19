@@ -24,7 +24,10 @@ import {
   listExercises,
 } from "@/db/exercisesRepository";
 import type { CategoryRecord, ExerciseRecord } from "@/db/schema";
-import { replaceActiveWorkoutExercise } from "@/state/activeWorkoutSelection";
+import {
+  addActiveWorkoutExercise,
+  replaceActiveWorkoutExercise,
+} from "@/state/activeWorkoutSelection";
 import { useRoutines } from "@/state/routines";
 import { colors } from "@/theme/colors";
 import { radius } from "@/theme/radius";
@@ -105,6 +108,7 @@ export default function SelectExerciseScreen() {
     mode?: string;
   }>();
   const { activeRoutineId, addExercise } = useRoutines();
+  const isActiveWorkoutAdd = mode === "active-workout-add";
   const isActiveWorkoutReplacement = mode === "active-workout-replace";
 
   const [categories, setCategories] = useState<CategoryRecord[]>([]);
@@ -166,14 +170,14 @@ export default function SelectExerciseScreen() {
   };
 
   const selectExercise = (exercise: ExerciseRecord) => {
-    if (isActiveWorkoutReplacement && activeWorkoutRoutineId) {
-      const replaced = replaceActiveWorkoutExercise(
-        activeWorkoutRoutineId,
-        exercise,
-      );
-      if (replaced) {
-        router.dismiss(1);
-      }
+    if (
+      activeWorkoutRoutineId &&
+      (isActiveWorkoutReplacement || isActiveWorkoutAdd)
+    ) {
+      const handled = isActiveWorkoutReplacement
+        ? replaceActiveWorkoutExercise(activeWorkoutRoutineId, exercise)
+        : addActiveWorkoutExercise(activeWorkoutRoutineId, exercise);
+      if (handled) router.dismiss(1);
       return;
     }
 
@@ -229,7 +233,7 @@ export default function SelectExerciseScreen() {
           <AppHeader
             leftAction="close"
             onBackPress={() =>
-              isActiveWorkoutReplacement
+              isActiveWorkoutReplacement || isActiveWorkoutAdd
                 ? router.dismiss(1)
                 : backOrReplace(
                     activeRoutineId

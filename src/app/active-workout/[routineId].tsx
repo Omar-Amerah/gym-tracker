@@ -23,8 +23,20 @@ import {
 } from "react-native-safe-area-context";
 
 import type { ExerciseRecord } from "@/db/schema";
-import { saveWorkout } from "@/db/workoutsRepository";
-import { registerActiveWorkoutReplacementHandler } from "@/state/activeWorkoutSelection";
+import {
+  getSavedWorkout,
+  getLastExercisePerformance,
+  markWorkoutCompleted,
+  saveWorkout,
+  updateWorkout,
+  type PreviousExercisePerformance,
+  type PreviousExerciseSet,
+  type WorkoutStatus,
+} from "@/db/workoutsRepository";
+import {
+  registerActiveWorkoutAddExerciseHandler,
+  registerActiveWorkoutReplacementHandler,
+} from "@/state/activeWorkoutSelection";
 import { useRoutines, type Routine } from "@/state/routines";
 import { colors } from "@/theme/colors";
 import { radius } from "@/theme/radius";
@@ -53,6 +65,8 @@ type ActiveWorkoutExercise = {
 };
 
 type ActiveWorkout = {
+  id?: string;
+  mode: "new" | "fromRoutine" | "editSaved";
   routineId: string;
   name: string;
   bodyweightKg: string;
@@ -60,6 +74,7 @@ type ActiveWorkout = {
   startTime: string;
   endTime: string;
   notes: string;
+  status: WorkoutStatus;
   exercises: ActiveWorkoutExercise[];
 };
 
@@ -81,6 +96,7 @@ type SetField = keyof Pick<
 const ITEM_HEIGHT = 66;
 const TIME_OPTION_HEIGHT = 42;
 const WEEKDAY_LABELS = ["S", "M", "T", "W", "T", "F", "S"];
+const PREVIOUS_NOTE_LIMIT = 40;
 
 function createId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -202,17 +218,124 @@ function formatMonthTitle(date: Date) {
   });
 }
 
+function formatCompactDate(value: string) {
+  const [day, month, year] = value.split("/").map(Number);
+  const parsed =
+    day && month && year ? new Date(year, month - 1, day) : new Date(value);
+  const date = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+
+  return date.toLocaleDateString("en-US", {
+    day: "numeric",
+    month: "short",
+  });
+}
+
+function formatPreviousNumber(value: number) {
+  return Number.isInteger(value) ? String(value) : String(value);
+}
+
+function truncatePreviousNote(note: string) {
+  const trimmed = note.trim();
+  if (trimmed.length <= PREVIOUS_NOTE_LIMIT) return trimmed;
+  return `${trimmed.slice(0, PREVIOUS_NOTE_LIMIT - 3).trimEnd()}...`;
+}
+
+function formatPreviousSet(set: PreviousExerciseSet) {
+  const hasKg = set.kg !== null;
+  const hasReps = set.reps !== null;
+  const hasMinutes = set.minutes !== null;
+  const hasSeconds = set.seconds !== null;
+  const note = set.notes?.trim()
+    ? truncatePreviousNote(set.notes)
+    : "";
+  let value: string | null = null;
+
+  if (hasKg && hasReps) {
+    value = `${formatPreviousNumber(set.kg ?? 0)} x ${set.reps}`;
+  } else if (hasMinutes || hasSeconds) {
+    value = `${set.minutes ?? 0}:${String(set.seconds ?? 0).padStart(2, "0")}`;
+  } else if (hasReps) {
+    value = `${set.reps} reps`;
+  } else if (hasKg) {
+    value = `${formatPreviousNumber(set.kg ?? 0)}kg`;
+  }
+
+  if (value && note) return `Last: ${value} · ${note}`;
+  if (value) return `Last: ${value}`;
+  if (note) return `Last note: ${note}`;
+  return null;
+}
+
+function formatPreviousField(
+  set: PreviousExerciseSet | null,
+  field: "kg" | "reps" | "time" | "notes",
+) {
+  if (!set) return null;
+
+  if (field === "kg") {
+    return set.kg === null ? null : `Last: ${formatPreviousNumber(set.kg)}`;
+  }
+  if (field === "reps") {
+    return set.reps === null ? null : `Last: ${set.reps}`;
+  }
+  if (field === "time") {
+    if (set.minutes === null && set.seconds === null) return null;
+    return `Last: ${set.minutes ?? 0}:${String(set.seconds ?? 0).padStart(2, "0")}`;
+  }
+
+  const note = set.notes?.trim();
+  return note ? `Last: ${truncatePreviousNote(note)}` : null;
+}
+
+function formatPreviousSummary(performance: PreviousExercisePerformance) {
+  const normalSets = performance.sets.filter((set) => set.setType === "normal");
+  const sourceSets = normalSets.length > 0 ? normalSets : performance.sets;
+  const setText = sourceSets
+    .map((set) =>
+      formatPreviousSet(set)
+        ?.replace(/^Last: /, "")
+        .replace(/^Last note: /, ""),
+    )
+    .filter((value): value is string => Boolean(value))
+    .slice(0, 3)
+    .join(", ");
+
+  if (!setText) return null;
+  return `Last: ${setText} · ${formatCompactDate(performance.date)}`;
+}
+
+function getPreviousSetForCurrent(
+  set: ActiveWorkoutSet,
+  currentSets: ActiveWorkoutSet[],
+  performance: PreviousExercisePerformance | undefined,
+) {
+  if (!performance) return null;
+
+  const currentTypeIndex = currentSets
+    .filter((item) => item.type === set.type)
+    .findIndex((item) => item.id === set.id);
+  if (currentTypeIndex < 0) return null;
+
+  return (
+    performance.sets
+      .filter((previousSet) => previousSet.setType === set.type)
+      .sort((a, b) => a.setOrder - b.setOrder)[currentTypeIndex] ?? null
+  );
+}
+
 function buildWorkout(routine: Routine): ActiveWorkout {
   const now = new Date();
 
   return {
     routineId: routine.id,
+    mode: "fromRoutine",
     name: routine.name,
     bodyweightKg: "",
     date: formatDateField(now),
     startTime: formatTimeField(now),
     endTime: "",
     notes: "",
+    status: "draft",
     exercises: routine.exercises.map((exercise) => {
       const totalSets = exercise.warmUpSets + exercise.workingSets;
       const sets = Array.from({ length: totalSets }, (_, index) => ({
@@ -242,6 +365,23 @@ function buildWorkout(routine: Routine): ActiveWorkout {
   };
 }
 
+function buildEmptyWorkout(): ActiveWorkout {
+  const now = new Date();
+
+  return {
+    routineId: "",
+    mode: "new",
+    name: "",
+    bodyweightKg: "",
+    date: formatDateField(now),
+    startTime: formatTimeField(now),
+    endTime: "",
+    notes: "",
+    status: "draft",
+    exercises: [],
+  };
+}
+
 function createClearedReplacementSets(
   exercise: ActiveWorkoutExercise,
   replacementExerciseId: string,
@@ -255,6 +395,29 @@ function createClearedReplacementSets(
     seconds: "",
     notes: "",
   }));
+}
+
+function createDefaultExerciseFromRecord(
+  exercise: ExerciseRecord,
+): ActiveWorkoutExercise {
+  return {
+    id: createId(`workout-${exercise.id}`),
+    exerciseId: exercise.id,
+    routineExerciseId: "",
+    name: exercise.name,
+    notes: "",
+    isStarred: false,
+    inputMode: "weightReps",
+    sets: Array.from({ length: 3 }, (_, index) => ({
+      id: createId(`${exercise.id}-set-${index + 1}`),
+      type: "normal" as const,
+      kg: "",
+      reps: "",
+      minutes: "",
+      seconds: "",
+      notes: "",
+    })),
+  };
 }
 
 function getSetLabel(set: ActiveWorkoutSet, sets: ActiveWorkoutSet[]) {
@@ -460,21 +623,29 @@ function ReorderWorkoutRow({
 export default function ActiveWorkoutScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { routineId } = useLocalSearchParams<{ routineId: string }>();
+  const { routineId, workoutId } = useLocalSearchParams<{
+    routineId?: string;
+    workoutId?: string;
+  }>();
   const { getRoutine, isLoading } = useRoutines();
-  const routine = getRoutine(routineId);
+  const routeRoutineId = routineId ?? "";
+  const routine = routineId ? getRoutine(routineId) : undefined;
+  const editorKey = workoutId ? `workout-${workoutId}` : `draft-${routeRoutineId || "new"}`;
 
   const [workout, setWorkout] = useState<ActiveWorkout | null>(null);
   const [initialisedRoutineId, setInitialisedRoutineId] = useState<
     string | null
   >(null);
-  const [finishConfirmOpen, setFinishConfirmOpen] = useState(false);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [isSavingWorkout, setIsSavingWorkout] = useState(false);
+  const [autosaveStatus, setAutosaveStatus] = useState<
+    "idle" | "saving" | "saved" | "failed"
+  >("idle");
   const [calendarMonth, setCalendarMonth] = useState(() => new Date());
   const [timePickerTarget, setTimePickerTarget] = useState<
     "startTime" | "endTime" | null
   >(null);
+  const [focusedFieldId, setFocusedFieldId] = useState<string | null>(null);
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(
     null,
   );
@@ -493,15 +664,162 @@ export default function ActiveWorkoutScreen() {
     null,
   );
   const [noteHeights, setNoteHeights] = useState<Record<string, number>>({});
+  const [previousPerformance, setPreviousPerformance] = useState<
+    Record<string, PreviousExercisePerformance | undefined>
+  >({});
   const exerciseNoteRefs = useRef<Record<string, TextInput | null>>({});
   const hourScrollRef = useRef<ScrollView>(null);
   const minuteScrollRef = useRef<ScrollView>(null);
+  const previousLookupKeyRef = useRef("");
+  const autosaveKeyRef = useRef("");
+  const autosavePayloadKeyRef = useRef("");
+  const autosavePayloadRef = useRef<ReturnType<typeof buildWorkoutPayload> | null>(
+    null,
+  );
+  const autosaveSavingRef = useRef(false);
 
   useEffect(() => {
+    if (workoutId) {
+      if (initialisedRoutineId === `workout-${workoutId}`) return;
+
+      let mounted = true;
+      getSavedWorkout(workoutId)
+        .then((savedWorkout) => {
+          if (!mounted) return;
+          if (!savedWorkout) {
+            setInitialisedRoutineId(`missing-${workoutId}`);
+            return;
+          }
+          setWorkout({
+            id: savedWorkout.id,
+            routineId: savedWorkout.routineId ?? "",
+            mode: "editSaved",
+            name: savedWorkout.name,
+            bodyweightKg:
+              savedWorkout.bodyweightKg === null
+                ? ""
+                : String(savedWorkout.bodyweightKg),
+            date: savedWorkout.date,
+            startTime: savedWorkout.startTime,
+            endTime: savedWorkout.endTime,
+            notes: savedWorkout.notes,
+            status: savedWorkout.status,
+            exercises: savedWorkout.exercises.map((exercise) => ({
+              id: exercise.id,
+              routineExerciseId: exercise.routineExerciseId ?? "",
+              exerciseId: exercise.exerciseId,
+              name: exercise.name,
+              notes: exercise.notes,
+              isStarred: exercise.isStarred,
+              inputMode: "weightReps",
+              sets: exercise.sets.map((set) => ({
+                id: set.id,
+                type: set.type,
+                kg: set.kg === null ? "" : String(set.kg),
+                reps: set.reps === null ? "" : String(set.reps),
+                minutes: set.minutes === null ? "" : String(set.minutes),
+                seconds: set.seconds === null ? "" : String(set.seconds),
+                notes: set.notes,
+              })),
+            })),
+          });
+          setInitialisedRoutineId(`workout-${workoutId}`);
+          autosaveKeyRef.current = JSON.stringify(
+            buildWorkoutPayload({
+              id: savedWorkout.id,
+              routineId: savedWorkout.routineId ?? "",
+              mode: "editSaved",
+              name: savedWorkout.name,
+              bodyweightKg:
+                savedWorkout.bodyweightKg === null
+                  ? ""
+                  : String(savedWorkout.bodyweightKg),
+              date: savedWorkout.date,
+              startTime: savedWorkout.startTime,
+              endTime: savedWorkout.endTime,
+              notes: savedWorkout.notes,
+              status: savedWorkout.status,
+              exercises: savedWorkout.exercises.map((exercise) => ({
+                id: exercise.id,
+                routineExerciseId: exercise.routineExerciseId ?? "",
+                exerciseId: exercise.exerciseId,
+                name: exercise.name,
+                notes: exercise.notes,
+                isStarred: exercise.isStarred,
+                inputMode: "weightReps",
+                sets: exercise.sets.map((set) => ({
+                  id: set.id,
+                  type: set.type,
+                  kg: set.kg === null ? "" : String(set.kg),
+                  reps: set.reps === null ? "" : String(set.reps),
+                  minutes: set.minutes === null ? "" : String(set.minutes),
+                  seconds: set.seconds === null ? "" : String(set.seconds),
+                  notes: set.notes,
+                })),
+              })),
+            }),
+          );
+          setAutosaveStatus("saved");
+        })
+        .catch((error) => {
+          console.error("Failed to load saved workout", error);
+          if (mounted) {
+            setInitialisedRoutineId(`missing-${workoutId}`);
+            Alert.alert("Could not load workout", "Please try again.");
+          }
+        });
+
+      return () => {
+        mounted = false;
+      };
+    }
+
+    if (!routeRoutineId) {
+      if (initialisedRoutineId === "new") return;
+      const draft = buildEmptyWorkout();
+      let mounted = true;
+      saveWorkout(buildWorkoutPayload(draft))
+        .then((createdWorkoutId) => {
+          if (!mounted) return;
+          const persistedDraft = { ...draft, id: createdWorkoutId };
+          setWorkout(persistedDraft);
+          autosaveKeyRef.current = JSON.stringify(
+            buildWorkoutPayload(persistedDraft),
+          );
+          setAutosaveStatus("saved");
+          setInitialisedRoutineId("new");
+        })
+        .catch((error) => {
+          console.error("Failed to create workout draft", error);
+          if (mounted) setAutosaveStatus("failed");
+        });
+      return () => {
+        mounted = false;
+      };
+    }
+
     if (!routine || initialisedRoutineId === routine.id) return;
-    setWorkout(buildWorkout(routine));
-    setInitialisedRoutineId(routine.id);
-  }, [initialisedRoutineId, routine]);
+    const draft = buildWorkout(routine);
+    let mounted = true;
+    saveWorkout(buildWorkoutPayload(draft))
+      .then((createdWorkoutId) => {
+        if (!mounted) return;
+        const persistedDraft = { ...draft, id: createdWorkoutId };
+        setWorkout(persistedDraft);
+        autosaveKeyRef.current = JSON.stringify(
+          buildWorkoutPayload(persistedDraft),
+        );
+        setAutosaveStatus("saved");
+        setInitialisedRoutineId(routine.id);
+      })
+      .catch((error) => {
+        console.error("Failed to create routine workout draft", error);
+        if (mounted) setAutosaveStatus("failed");
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [initialisedRoutineId, routeRoutineId, routine, workoutId]);
 
   useEffect(() => {
     if (!timePickerTarget || !workout) return;
@@ -527,7 +845,7 @@ export default function ActiveWorkoutScreen() {
 
   useEffect(() => {
     return registerActiveWorkoutReplacementHandler(
-      routineId,
+      editorKey,
       (exercise: ExerciseRecord) => {
         setWorkout((current) => {
           if (!current || !replacementExerciseId) return current;
@@ -555,7 +873,118 @@ export default function ActiveWorkoutScreen() {
         setSelectedExerciseId(null);
       },
     );
-  }, [replacementExerciseId, routineId]);
+  }, [editorKey, replacementExerciseId]);
+
+  useEffect(() => {
+    return registerActiveWorkoutAddExerciseHandler(
+      editorKey,
+      (exercise: ExerciseRecord) => {
+        setWorkout((current) => {
+          if (!current) return current;
+
+          return {
+            ...current,
+            exercises: [
+              ...current.exercises,
+              createDefaultExerciseFromRecord(exercise),
+            ],
+          };
+        });
+      },
+    );
+  }, [editorKey]);
+
+  useEffect(() => {
+    if (!workout || workout.exercises.length === 0) {
+      setPreviousPerformance({});
+      previousLookupKeyRef.current = "";
+      return;
+    }
+
+    const lookupKey = [
+      workout.id ?? "",
+      workout.mode,
+      ...workout.exercises.map(
+        (exercise) =>
+          `${exercise.id}:${exercise.exerciseId ?? ""}:${exercise.name}`,
+      ),
+    ].join("|");
+    if (previousLookupKeyRef.current === lookupKey) return;
+    previousLookupKeyRef.current = lookupKey;
+
+    let mounted = true;
+    const excludeWorkoutId = workout.mode === "editSaved" ? workout.id : null;
+
+    Promise.all(
+      workout.exercises.map(async (exercise) => {
+        try {
+          const performance = await getLastExercisePerformance({
+            exerciseId: exercise.exerciseId,
+            exerciseName: exercise.name,
+            excludeWorkoutId,
+          });
+          return [exercise.id, performance ?? undefined] as const;
+        } catch (error) {
+          console.warn("Failed to load previous exercise performance", error);
+          return [exercise.id, undefined] as const;
+        }
+      }),
+    ).then((entries) => {
+      if (!mounted) return;
+      setPreviousPerformance(Object.fromEntries(entries));
+    });
+
+    return () => {
+      mounted = false;
+    };
+  }, [
+    workout,
+  ]);
+
+  useEffect(() => {
+    if (!workout || !workout.id) return;
+
+    const workoutIdToSave = workout.id;
+    const payload = buildWorkoutPayload(workout);
+    const payloadKey = JSON.stringify(payload);
+    if (autosaveKeyRef.current === payloadKey) return;
+
+    setAutosaveStatus("saving");
+    const timer = setTimeout(() => {
+      autosavePayloadRef.current = payload;
+      autosavePayloadKeyRef.current = payloadKey;
+
+      const flushAutosave = () => {
+        if (autosaveSavingRef.current) return;
+        const nextPayload = autosavePayloadRef.current;
+        const nextKey = autosavePayloadKeyRef.current;
+        if (!nextPayload || !nextKey || autosaveKeyRef.current === nextKey) {
+          return;
+        }
+
+        autosaveSavingRef.current = true;
+        void updateWorkout(workoutIdToSave, nextPayload)
+          .then(() => {
+            autosaveKeyRef.current = nextKey;
+            setAutosaveStatus("saved");
+          })
+          .catch((error) => {
+            console.warn("Failed to autosave workout", error);
+            setAutosaveStatus("failed");
+          })
+          .finally(() => {
+            autosaveSavingRef.current = false;
+            if (autosavePayloadKeyRef.current !== autosaveKeyRef.current) {
+              flushAutosave();
+            }
+          });
+      };
+
+      flushAutosave();
+    }, 450);
+
+    return () => clearTimeout(timer);
+  }, [workout]);
 
   const updateWorkoutField = (field: WorkoutField, value: string) => {
     setWorkout((current) =>
@@ -711,56 +1140,57 @@ export default function ActiveWorkoutScreen() {
     });
   };
 
-  const workoutHasSetData = (candidate: ActiveWorkout) =>
-    candidate.exercises.some((exercise) =>
-      exercise.sets.some(
-        (set) =>
-          set.kg.trim() ||
-          set.reps.trim() ||
-          (set.minutes ?? "").trim() ||
-          (set.seconds ?? "").trim() ||
-          set.notes.trim(),
-      ),
-    );
+  const buildWorkoutPayload = (candidate: ActiveWorkout) => ({
+    bodyweightKg: parseOptionalNumber(candidate.bodyweightKg),
+    date: candidate.date,
+    durationMinutes: calculateDurationMinutes(
+      candidate.date,
+      candidate.startTime,
+      candidate.endTime,
+    ),
+    endTime: candidate.endTime,
+    exercises: candidate.exercises.map((exercise) => ({
+      exerciseId: exercise.exerciseId ?? null,
+      id: exercise.id,
+      isStarred: exercise.isStarred,
+      name: exercise.name,
+      notes: exercise.notes,
+      routineExerciseId: exercise.routineExerciseId,
+      sets: exercise.sets.map((set) => ({
+        id: set.id,
+        kg: parseOptionalNumber(set.kg),
+        minutes: parseOptionalInteger(set.minutes),
+        notes: set.notes,
+        reps: parseOptionalInteger(set.reps),
+        seconds: parseOptionalInteger(set.seconds),
+        type: set.type,
+      })),
+    })),
+    name: candidate.name,
+    notes: candidate.notes,
+    routineId: candidate.routineId || null,
+    status: candidate.status,
+    startTime: candidate.startTime,
+  });
 
-  const saveFinishedWorkout = async (candidate: ActiveWorkout) => {
-    if (isSavingWorkout) return;
+  const saveFinishedWorkout = async (
+    candidate: ActiveWorkout,
+    { navigateAfterSave = true } = {},
+  ) => {
+    if (isSavingWorkout || !candidate.id) return;
 
     setIsSavingWorkout(true);
     try {
-      await saveWorkout({
-        bodyweightKg: parseOptionalNumber(candidate.bodyweightKg),
-        date: candidate.date,
-        durationMinutes: calculateDurationMinutes(
-          candidate.date,
-          candidate.startTime,
-          candidate.endTime,
-        ),
-        endTime: candidate.endTime,
-        exercises: candidate.exercises.map((exercise) => ({
-          exerciseId: exercise.exerciseId ?? null,
-          id: exercise.id,
-          isStarred: exercise.isStarred,
-          name: exercise.name,
-          notes: exercise.notes,
-          routineExerciseId: exercise.routineExerciseId,
-          sets: exercise.sets.map((set) => ({
-            id: set.id,
-            kg: parseOptionalNumber(set.kg),
-            minutes: parseOptionalInteger(set.minutes),
-            notes: set.notes,
-            reps: parseOptionalInteger(set.reps),
-            seconds: parseOptionalInteger(set.seconds),
-            type: set.type,
-          })),
-        })),
-        name: candidate.name,
-        notes: candidate.notes,
-        routineId: candidate.routineId,
-        startTime: candidate.startTime,
+      const payload = buildWorkoutPayload(candidate);
+      await markWorkoutCompleted(candidate.id, {
+        ...payload,
+        status: "completed",
       });
-      setFinishConfirmOpen(false);
-      router.replace("/");
+      autosaveKeyRef.current = JSON.stringify({
+        ...payload,
+        status: "completed",
+      });
+      if (navigateAfterSave) router.replace("/");
     } catch (error) {
       console.error("Failed to save workout", error);
       Alert.alert(
@@ -777,23 +1207,11 @@ export default function ActiveWorkoutScreen() {
 
     const completedWorkout = {
       ...workout,
-      endTime: workout.endTime || formatTimeField(new Date()),
+      status: "completed" as const,
+      endTime:
+        workout.endTime || formatTimeField(new Date()),
     };
     setWorkout(completedWorkout);
-
-    if (!workoutHasSetData(completedWorkout)) {
-      Alert.alert("This workout has no completed data. Save anyway?", "", [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Save",
-          onPress: () => {
-            void saveFinishedWorkout(completedWorkout);
-          },
-        },
-      ]);
-      return;
-    }
-
     void saveFinishedWorkout(completedWorkout);
   };
 
@@ -811,6 +1229,7 @@ export default function ActiveWorkoutScreen() {
     );
     updateWorkoutField("date", formatDateField(selectedDate));
     setDatePickerOpen(false);
+    setFocusedFieldId(null);
   };
 
   const moveCalendarMonth = (direction: -1 | 1) => {
@@ -897,8 +1316,18 @@ export default function ActiveWorkoutScreen() {
     router.push({
       pathname: "/select-exercise",
       params: {
-        activeWorkoutRoutineId: routineId,
+        activeWorkoutRoutineId: editorKey,
         mode: "active-workout-replace",
+      },
+    });
+  };
+
+  const openAddExercise = () => {
+    router.push({
+      pathname: "/select-exercise",
+      params: {
+        activeWorkoutRoutineId: editorKey,
+        mode: "active-workout-add",
       },
     });
   };
@@ -933,11 +1362,16 @@ export default function ActiveWorkoutScreen() {
       : null;
 
   if (!workout) {
+    const isEditorLoading =
+      isLoading ||
+      (Boolean(workoutId) && initialisedRoutineId !== `missing-${workoutId}`) ||
+      (!routeRoutineId && initialisedRoutineId !== "new");
+
     return (
       <SafeAreaView edges={["top", "bottom"]} style={styles.safeArea}>
         <View style={styles.emptyState}>
           <Text style={styles.emptyText}>
-            {isLoading ? "Loading..." : "Workout not found."}
+            {isEditorLoading ? "Loading..." : "Workout not found."}
           </Text>
         </View>
       </SafeAreaView>
@@ -1034,6 +1468,15 @@ export default function ActiveWorkoutScreen() {
             <Text numberOfLines={1} style={styles.headerTitle}>
               {headerTitle}
             </Text>
+            {autosaveStatus !== "idle" ? (
+              <Text style={styles.autosaveStatusText}>
+                {autosaveStatus === "saving"
+                  ? "Saving..."
+                  : autosaveStatus === "failed"
+                    ? "Failed to save"
+                    : "Saved"}
+              </Text>
+            ) : null}
           </View>
 
           <View style={styles.headerActions}>
@@ -1051,13 +1494,21 @@ export default function ActiveWorkoutScreen() {
             <Pressable
               accessibilityLabel="Finish workout"
               accessibilityRole="button"
-              onPress={() => setFinishConfirmOpen(true)}
+              disabled={isSavingWorkout}
+              onPress={finishWorkout}
               style={({ pressed }) => [
                 styles.finishHeaderButton,
+                isSavingWorkout && styles.disabledAction,
                 pressed && styles.pressed,
               ]}
             >
-              <Text style={styles.finishHeaderText}>FINISH</Text>
+              <Text style={styles.finishHeaderText}>
+                {isSavingWorkout
+                  ? "SAVING"
+                  : workout.status === "completed"
+                    ? "DONE"
+                    : "FINISH"}
+              </Text>
             </Pressable>
             <Pressable
               accessibilityLabel="Workout options"
@@ -1076,7 +1527,7 @@ export default function ActiveWorkoutScreen() {
         <ScrollView
           contentContainerStyle={[
             styles.content,
-            { paddingBottom: 32 + insets.bottom },
+            { paddingBottom: 120 + insets.bottom },
           ]}
           keyboardDismissMode="on-drag"
           keyboardShouldPersistTaps="handled"
@@ -1084,68 +1535,127 @@ export default function ActiveWorkoutScreen() {
         >
           <View style={styles.detailsGrid}>
             <WorkoutInput
+              fieldId="workout-name"
+              focusedFieldId={focusedFieldId}
               label="Name"
               onChangeText={(value) => updateWorkoutField("name", value)}
+              setFocusedFieldId={setFocusedFieldId}
               value={workout.name}
               wide
             />
             <WorkoutInput
+              fieldId="workout-bodyweight"
+              focusedFieldId={focusedFieldId}
               keyboardType="decimal-pad"
               label="BW (Kg)"
               onChangeText={(value) =>
                 updateWorkoutField("bodyweightKg", value)
               }
+              setFocusedFieldId={setFocusedFieldId}
               value={workout.bodyweightKg}
             />
             <WorkoutInput
+              fieldId="workout-date"
+              focusedFieldId={focusedFieldId}
               icon="calendar-month-outline"
               label="Date"
               onPress={openDatePicker}
               onChangeText={(value) => updateWorkoutField("date", value)}
+              setFocusedFieldId={setFocusedFieldId}
               value={workout.date}
             />
             <WorkoutInput
+              fieldId="workout-start"
+              focusedFieldId={focusedFieldId}
               icon="clock-outline"
               label="Start"
               onPress={() => setTimePickerTarget("startTime")}
               onChangeText={(value) => updateWorkoutField("startTime", value)}
+              setFocusedFieldId={setFocusedFieldId}
               value={workout.startTime}
             />
             <WorkoutInput
+              fieldId="workout-end"
+              focusedFieldId={focusedFieldId}
               icon="clock-outline"
               label="End"
               onPress={() => setTimePickerTarget("endTime")}
               onChangeText={(value) => updateWorkoutField("endTime", value)}
+              setFocusedFieldId={setFocusedFieldId}
               value={workout.endTime}
             />
             <WorkoutInput
+              fieldId="workout-notes"
+              focusedFieldId={focusedFieldId}
               label="Notes"
               multiline
               onChangeText={(value) => updateWorkoutField("notes", value)}
+              setFocusedFieldId={setFocusedFieldId}
               value={workout.notes}
               wide
             />
           </View>
 
           <View style={styles.exerciseList}>
-            {workout.exercises.map((exercise) => (
-              <View key={exercise.id} style={styles.exerciseSection}>
-                <View style={styles.exerciseHeader}>
-                  <Text style={styles.exerciseTitle}>{exercise.name}</Text>
-                  <Pressable
-                    accessibilityLabel={`${exercise.name} options`}
-                    accessibilityRole="button"
-                    hitSlop={8}
-                    onPress={() => setSelectedExerciseId(exercise.id)}
-                    style={styles.exerciseMenu}
-                  >
-                    <MaterialCommunityIcons
-                      color={colors.textSecondary}
-                      name="dots-vertical"
-                      size={23}
-                    />
-                  </Pressable>
-                </View>
+            {workout.exercises.length === 0 ? (
+              <View style={styles.emptyWorkoutState}>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={openAddExercise}
+                  style={({ pressed }) => [
+                    styles.addExerciseButton,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <MaterialCommunityIcons
+                    color={colors.background}
+                    name="plus"
+                    size={20}
+                  />
+                  <Text style={styles.addExerciseButtonText}>
+                    Add Exercise
+                  </Text>
+                </Pressable>
+              </View>
+            ) : null}
+            {workout.exercises.map((exercise) => {
+              const previous = previousPerformance[exercise.id];
+              const previousSummary = previous
+                ? formatPreviousSummary(previous)
+                : null;
+              const previousExerciseNote = previous?.notes?.trim()
+                ? truncatePreviousNote(previous.notes)
+                : null;
+
+              return (
+                <View key={exercise.id} style={styles.exerciseSection}>
+                  <View style={styles.exerciseHeader}>
+                    <Text style={styles.exerciseTitle}>{exercise.name}</Text>
+                    <Pressable
+                      accessibilityLabel={`${exercise.name} options`}
+                      accessibilityRole="button"
+                      hitSlop={8}
+                      onPress={() => setSelectedExerciseId(exercise.id)}
+                      style={styles.exerciseMenu}
+                    >
+                      <MaterialCommunityIcons
+                        color={colors.textSecondary}
+                        name="dots-vertical"
+                        size={23}
+                      />
+                    </Pressable>
+                  </View>
+
+                  {previousSummary ? (
+                    <Text style={styles.previousExerciseSummary}>
+                      {previousSummary}
+                    </Text>
+                  ) : null}
+                  {previousExerciseNote ? (
+                    <Text style={styles.previousExerciseNote}>
+                      Note: {previousExerciseNote}
+                    </Text>
+                  ) : null}
 
                 {exercise.notes.length > 0 ||
                 exerciseNoteTargetId === exercise.id ? (
@@ -1163,6 +1673,10 @@ export default function ActiveWorkoutScreen() {
                     onChangeText={(value) =>
                       updateExerciseNote(exercise.id, value)
                     }
+                    onBlur={() => setFocusedFieldId(null)}
+                    onFocus={() =>
+                      setFocusedFieldId(`exercise-${exercise.id}-notes`)
+                    }
                     placeholder="Exercise note"
                     placeholderTextColor={colors.textMuted}
                     ref={(ref) => {
@@ -1171,6 +1685,8 @@ export default function ActiveWorkoutScreen() {
                     scrollEnabled
                     style={[
                       styles.exerciseNoteInput,
+                      focusedFieldId === `exercise-${exercise.id}-notes` &&
+                        styles.inputFocused,
                       {
                         height: noteHeights[`exercise-${exercise.id}`] ?? 48,
                       },
@@ -1180,9 +1696,29 @@ export default function ActiveWorkoutScreen() {
                   />
                 ) : null}
 
-                {exercise.sets.map((set) => (
-                  <View key={set.id} style={styles.setRowGroup}>
-                    <View style={styles.setHeader}>
+                {exercise.sets.map((set) => {
+                  const previousSet = getPreviousSetForCurrent(
+                    set,
+                    exercise.sets,
+                    previous,
+                  );
+                  const previousKgText = formatPreviousField(previousSet, "kg");
+                  const previousRepsText = formatPreviousField(
+                    previousSet,
+                    "reps",
+                  );
+                  const previousTimeText = formatPreviousField(
+                    previousSet,
+                    "time",
+                  );
+                  const previousNotesText = formatPreviousField(
+                    previousSet,
+                    "notes",
+                  );
+
+                  return (
+                    <View key={set.id} style={styles.setRowGroup}>
+                      <View style={styles.setHeader}>
                       <View style={styles.setNumberLabel} />
                       {exercise.inputMode === "time" ? (
                         <>
@@ -1199,9 +1735,9 @@ export default function ActiveWorkoutScreen() {
                         Notes
                       </Text>
                       <View style={styles.removeColumn} />
-                    </View>
+                      </View>
 
-                    <View style={styles.setRow}>
+                      <View style={styles.setRow}>
                       <View
                         style={[
                           styles.setCircle,
@@ -1223,6 +1759,9 @@ export default function ActiveWorkoutScreen() {
                       {exercise.inputMode === "time" ? (
                         <>
                           <SetInput
+                            fieldId={`${set.id}-minutes`}
+                            focusedFieldId={focusedFieldId}
+                            helperText={previousTimeText}
                             keyboardType="number-pad"
                             onChangeText={(value) =>
                               updateSetField(
@@ -1232,9 +1771,12 @@ export default function ActiveWorkoutScreen() {
                                 value,
                               )
                             }
+                            setFocusedFieldId={setFocusedFieldId}
                             value={set.minutes ?? ""}
                           />
                           <SetInput
+                            fieldId={`${set.id}-seconds`}
+                            focusedFieldId={focusedFieldId}
                             keyboardType="number-pad"
                             onChangeText={(value) =>
                               updateSetField(
@@ -1244,29 +1786,41 @@ export default function ActiveWorkoutScreen() {
                                 value,
                               )
                             }
+                            setFocusedFieldId={setFocusedFieldId}
                             value={set.seconds ?? ""}
                           />
                         </>
                       ) : (
                         <>
                           <SetInput
+                            fieldId={`${set.id}-kg`}
+                            focusedFieldId={focusedFieldId}
+                            helperText={previousKgText}
                             keyboardType="decimal-pad"
                             onChangeText={(value) =>
                               updateSetField(exercise.id, set.id, "kg", value)
                             }
+                            setFocusedFieldId={setFocusedFieldId}
                             value={set.kg}
                           />
                           <SetInput
+                            fieldId={`${set.id}-reps`}
+                            focusedFieldId={focusedFieldId}
+                            helperText={previousRepsText}
                             keyboardType="number-pad"
                             onChangeText={(value) =>
                               updateSetField(exercise.id, set.id, "reps", value)
                             }
+                            setFocusedFieldId={setFocusedFieldId}
                             value={set.reps}
                           />
                         </>
                       )}
 
                       <SetInput
+                        fieldId={`${set.id}-notes`}
+                        focusedFieldId={focusedFieldId}
+                        helperText={previousNotesText}
                         multiline
                         onContentSizeChange={(height) =>
                           setNoteHeights((current) => ({
@@ -1277,6 +1831,7 @@ export default function ActiveWorkoutScreen() {
                         onChangeText={(value) =>
                           updateSetField(exercise.id, set.id, "notes", value)
                         }
+                        setFocusedFieldId={setFocusedFieldId}
                         style={[
                           styles.notesInput,
                           {
@@ -1304,9 +1859,10 @@ export default function ActiveWorkoutScreen() {
                           size={22}
                         />
                       </Pressable>
+                      </View>
                     </View>
-                  </View>
-                ))}
+                  );
+                })}
 
                 <View style={styles.exerciseFooter}>
                   <Pressable
@@ -1383,58 +1939,35 @@ export default function ActiveWorkoutScreen() {
                     </Pressable>
                   </View>
                 </View>
-              </View>
-            ))}
+                </View>
+              );
+            })}
           </View>
+          {workout.exercises.length > 0 ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={openAddExercise}
+              style={({ pressed }) => [
+                styles.addExerciseInlineButton,
+                pressed && styles.pressed,
+              ]}
+            >
+              <MaterialCommunityIcons
+                color={colors.accent}
+                name="plus"
+                size={18}
+              />
+              <Text style={styles.addExerciseInlineText}>Add Exercise</Text>
+            </Pressable>
+          ) : null}
         </ScrollView>
 
         <BottomSheet
           insetsBottom={insets.bottom}
-          onClose={() => setFinishConfirmOpen(false)}
-          visible={finishConfirmOpen}
-        >
-          <Text style={styles.sheetTitle}>Finish workout?</Text>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => setFinishConfirmOpen(false)}
-            style={({ pressed }) => [
-              styles.sheetAction,
-              pressed && styles.pressed,
-            ]}
-          >
-            <MaterialCommunityIcons
-              color={colors.textPrimary}
-              name="close"
-              size={24}
-              style={styles.sheetIcon}
-            />
-            <Text style={styles.sheetText}>Cancel</Text>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            disabled={isSavingWorkout}
-            onPress={finishWorkout}
-            style={({ pressed }) => [
-              styles.sheetAction,
-              isSavingWorkout && styles.disabledAction,
-              pressed && styles.pressed,
-            ]}
-          >
-            <MaterialCommunityIcons
-              color={colors.accent}
-              name="check"
-              size={24}
-              style={styles.sheetIcon}
-            />
-            <Text style={styles.sheetText}>
-              {isSavingWorkout ? "Saving..." : "Finish"}
-            </Text>
-          </Pressable>
-        </BottomSheet>
-
-        <BottomSheet
-          insetsBottom={insets.bottom}
-          onClose={() => setDatePickerOpen(false)}
+          onClose={() => {
+            setDatePickerOpen(false);
+            setFocusedFieldId(null);
+          }}
           visible={datePickerOpen}
         >
           <View style={styles.pickerHeader}>
@@ -1523,7 +2056,10 @@ export default function ActiveWorkoutScreen() {
 
         <BottomSheet
           insetsBottom={insets.bottom}
-          onClose={() => setTimePickerTarget(null)}
+          onClose={() => {
+            setTimePickerTarget(null);
+            setFocusedFieldId(null);
+          }}
           visible={timePickerTarget !== null}
         >
           <Text style={styles.sheetTitle}>
@@ -1535,6 +2071,7 @@ export default function ActiveWorkoutScreen() {
               if (!timePickerTarget) return;
               updateWorkoutField(timePickerTarget, formatTimeField(new Date()));
               setTimePickerTarget(null);
+              setFocusedFieldId(null);
             }}
             style={({ pressed }) => [
               styles.sheetAction,
@@ -1874,33 +2411,45 @@ function SheetListAction({
 
 function WorkoutInput({
   icon,
+  fieldId,
+  focusedFieldId,
   keyboardType,
   label,
   multiline,
   onChangeText,
   onPress,
+  setFocusedFieldId,
   value,
   wide,
 }: {
+  fieldId: string;
+  focusedFieldId: string | null;
   icon?: React.ComponentProps<typeof MaterialCommunityIcons>["name"];
   keyboardType?: "default" | "decimal-pad" | "number-pad";
   label: string;
   multiline?: boolean;
   onChangeText: (value: string) => void;
   onPress?: () => void;
+  setFocusedFieldId: (fieldId: string | null) => void;
   value: string;
   wide?: boolean;
 }) {
+  const focused = focusedFieldId === fieldId;
+
   return (
     <View style={[styles.workoutInputWrap, wide && styles.wideInput]}>
       <Text style={styles.inputLabel}>{label}</Text>
       {onPress ? (
         <Pressable
           accessibilityRole="button"
-          onPress={onPress}
+          onPress={() => {
+            setFocusedFieldId(fieldId);
+            onPress();
+          }}
           style={({ pressed }) => [
             styles.workoutInput,
             styles.pressableWorkoutInput,
+            focused && styles.inputFocused,
             pressed && styles.pressed,
           ]}
         >
@@ -1920,9 +2469,15 @@ function WorkoutInput({
         <TextInput
           keyboardType={keyboardType}
           multiline={multiline}
+          onBlur={() => setFocusedFieldId(null)}
           onChangeText={onChangeText}
+          onFocus={() => setFocusedFieldId(fieldId)}
           placeholderTextColor={colors.textSecondary}
-          style={[styles.workoutInput, multiline && styles.multilineInput]}
+          style={[
+            styles.workoutInput,
+            focused && styles.inputFocused,
+            multiline && styles.multilineInput,
+          ]}
           textAlignVertical={multiline ? "top" : "center"}
           value={value}
         />
@@ -1932,36 +2487,58 @@ function WorkoutInput({
 }
 
 function SetInput({
+  fieldId,
+  focusedFieldId,
+  helperText,
   keyboardType,
   multiline,
   onContentSizeChange,
   onChangeText,
+  setFocusedFieldId,
   style,
   value,
 }: {
+  fieldId: string;
+  focusedFieldId: string | null;
+  helperText?: string | null;
   keyboardType?: "default" | "decimal-pad" | "number-pad";
   multiline?: boolean;
   onContentSizeChange?: (height: number) => void;
   onChangeText: (value: string) => void;
+  setFocusedFieldId: (fieldId: string | null) => void;
   style?: StyleProp<TextStyle>;
   value: string;
 }) {
+  const focused = focusedFieldId === fieldId;
+
   return (
-    <TextInput
-      keyboardType={keyboardType}
-      multiline={multiline}
-      onContentSizeChange={
-        onContentSizeChange
-          ? (event) => onContentSizeChange(event.nativeEvent.contentSize.height)
-          : undefined
-      }
-      onChangeText={onChangeText}
-      placeholderTextColor={colors.textMuted}
-      scrollEnabled={multiline}
-      style={[styles.setInput, style]}
-      textAlignVertical={multiline ? "top" : "center"}
-      value={value}
-    />
+    <View style={[styles.setInputWrap, multiline && styles.notesInputWrap]}>
+      <TextInput
+        keyboardType={keyboardType}
+        multiline={multiline}
+        onBlur={() => setFocusedFieldId(null)}
+        onContentSizeChange={
+          onContentSizeChange
+            ? (event) =>
+                onContentSizeChange(event.nativeEvent.contentSize.height)
+            : undefined
+        }
+        onChangeText={onChangeText}
+        onFocus={() => setFocusedFieldId(fieldId)}
+        placeholderTextColor={colors.textMuted}
+        scrollEnabled={multiline}
+        style={[styles.setInput, focused && styles.inputFocused, style]}
+        textAlignVertical={multiline ? "top" : "center"}
+        value={value}
+      />
+      {helperText ? (
+        <Text numberOfLines={1} style={styles.previousFieldText}>
+          {helperText}
+        </Text>
+      ) : (
+        <View style={styles.previousFieldSpacer} />
+      )}
+    </View>
   );
 }
 
@@ -2003,8 +2580,7 @@ const styles = StyleSheet.create({
   dateHeaderTitle: {
     alignItems: "center",
     flex: 1,
-    flexDirection: "row",
-    height: 40,
+    height: 42,
     justifyContent: "center",
     paddingHorizontal: 10,
   },
@@ -2024,6 +2600,13 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: "600",
     letterSpacing: 0,
+  },
+  autosaveStatusText: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontWeight: "600",
+    letterSpacing: 0,
+    marginTop: 1,
   },
   headerActions: {
     alignItems: "center",
@@ -2083,6 +2666,10 @@ const styles = StyleSheet.create({
     minHeight: 52,
     paddingHorizontal: 14,
   },
+  inputFocused: {
+    borderColor: colors.accent,
+    borderWidth: 1.5,
+  },
   pressableWorkoutInput: {
     alignItems: "center",
     flexDirection: "row",
@@ -2110,11 +2697,61 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
     paddingTop: 18,
   },
+  emptyWorkoutState: {
+    alignItems: "center",
+    justifyContent: "flex-end",
+    minHeight: 300,
+    paddingBottom: 34,
+  },
+  addExerciseButton: {
+    alignItems: "center",
+    backgroundColor: colors.accent,
+    borderRadius: radius.lg,
+    flexDirection: "row",
+    gap: 8,
+    minHeight: 48,
+    paddingHorizontal: 18,
+  },
+  addExerciseButtonText: {
+    color: colors.background,
+    fontSize: 16,
+    fontWeight: "800",
+  },
+  addExerciseInlineButton: {
+    alignItems: "center",
+    alignSelf: "center",
+    borderColor: "rgba(91, 212, 224, 0.45)",
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 7,
+    marginTop: 10,
+    minHeight: 44,
+    paddingHorizontal: 16,
+  },
+  addExerciseInlineText: {
+    color: colors.accent,
+    fontSize: 15,
+    fontWeight: "800",
+  },
   exerciseHeader: {
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "space-between",
     marginBottom: 10,
+  },
+  previousExerciseSummary: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontWeight: "600",
+    lineHeight: 17,
+    marginBottom: 2,
+  },
+  previousExerciseNote: {
+    color: colors.textMuted,
+    fontSize: 12,
+    lineHeight: 17,
+    marginBottom: 8,
   },
   exerciseTitle: {
     color: colors.textPrimary,
@@ -2172,6 +2809,30 @@ const styles = StyleSheet.create({
   },
   setRowGroup: {
     marginBottom: 8,
+  },
+  previousSetText: {
+    color: colors.textMuted,
+    fontSize: 11,
+    lineHeight: 15,
+    marginLeft: 39,
+    marginTop: 1,
+  },
+  setInputWrap: {
+    width: 58,
+  },
+  notesInputWrap: {
+    flex: 1,
+    minWidth: 80,
+  },
+  previousFieldText: {
+    color: colors.textMuted,
+    fontSize: 10,
+    lineHeight: 13,
+    marginTop: 2,
+  },
+  previousFieldSpacer: {
+    height: 15,
+    marginTop: 2,
   },
   setRow: {
     alignItems: "flex-start",
@@ -2238,6 +2899,7 @@ const styles = StyleSheet.create({
     paddingBottom: 9,
     textAlign: "left",
     textAlignVertical: "center",
+    width: "100%",
   },
   setOptionsButton: {
     alignItems: "center",
