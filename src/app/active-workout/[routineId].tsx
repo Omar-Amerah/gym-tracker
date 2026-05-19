@@ -24,13 +24,13 @@ import {
 
 import type { ExerciseRecord } from "@/db/schema";
 import {
-  getSavedWorkout,
+  deleteWorkout,
   getLastExercisePerformance,
+  getSavedWorkout,
   markWorkoutCompleted,
   saveWorkout,
   updateWorkout,
   type PreviousExercisePerformance,
-  type PreviousExerciseSet,
   type WorkoutStatus,
 } from "@/db/workoutsRepository";
 import {
@@ -96,7 +96,6 @@ type SetField = keyof Pick<
 const ITEM_HEIGHT = 66;
 const TIME_OPTION_HEIGHT = 42;
 const WEEKDAY_LABELS = ["S", "M", "T", "W", "T", "F", "S"];
-const PREVIOUS_NOTE_LIMIT = 40;
 
 function createId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -216,92 +215,6 @@ function formatMonthTitle(date: Date) {
     month: "long",
     year: "numeric",
   });
-}
-
-function formatCompactDate(value: string) {
-  const [day, month, year] = value.split("/").map(Number);
-  const parsed =
-    day && month && year ? new Date(year, month - 1, day) : new Date(value);
-  const date = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
-
-  return date.toLocaleDateString("en-US", {
-    day: "numeric",
-    month: "short",
-  });
-}
-
-function formatPreviousNumber(value: number) {
-  return Number.isInteger(value) ? String(value) : String(value);
-}
-
-function truncatePreviousNote(note: string) {
-  const trimmed = note.trim();
-  if (trimmed.length <= PREVIOUS_NOTE_LIMIT) return trimmed;
-  return `${trimmed.slice(0, PREVIOUS_NOTE_LIMIT - 3).trimEnd()}...`;
-}
-
-function formatPreviousSet(set: PreviousExerciseSet) {
-  const hasKg = set.kg !== null;
-  const hasReps = set.reps !== null;
-  const hasMinutes = set.minutes !== null;
-  const hasSeconds = set.seconds !== null;
-  const note = set.notes?.trim()
-    ? truncatePreviousNote(set.notes)
-    : "";
-  let value: string | null = null;
-
-  if (hasKg && hasReps) {
-    value = `${formatPreviousNumber(set.kg ?? 0)} x ${set.reps}`;
-  } else if (hasMinutes || hasSeconds) {
-    value = `${set.minutes ?? 0}:${String(set.seconds ?? 0).padStart(2, "0")}`;
-  } else if (hasReps) {
-    value = `${set.reps} reps`;
-  } else if (hasKg) {
-    value = `${formatPreviousNumber(set.kg ?? 0)}kg`;
-  }
-
-  if (value && note) return `Last: ${value} · ${note}`;
-  if (value) return `Last: ${value}`;
-  if (note) return `Last note: ${note}`;
-  return null;
-}
-
-function formatPreviousField(
-  set: PreviousExerciseSet | null,
-  field: "kg" | "reps" | "time" | "notes",
-) {
-  if (!set) return null;
-
-  if (field === "kg") {
-    return set.kg === null ? null : `Last: ${formatPreviousNumber(set.kg)}`;
-  }
-  if (field === "reps") {
-    return set.reps === null ? null : `Last: ${set.reps}`;
-  }
-  if (field === "time") {
-    if (set.minutes === null && set.seconds === null) return null;
-    return `Last: ${set.minutes ?? 0}:${String(set.seconds ?? 0).padStart(2, "0")}`;
-  }
-
-  const note = set.notes?.trim();
-  return note ? `Last: ${truncatePreviousNote(note)}` : null;
-}
-
-function formatPreviousSummary(performance: PreviousExercisePerformance) {
-  const normalSets = performance.sets.filter((set) => set.setType === "normal");
-  const sourceSets = normalSets.length > 0 ? normalSets : performance.sets;
-  const setText = sourceSets
-    .map((set) =>
-      formatPreviousSet(set)
-        ?.replace(/^Last: /, "")
-        .replace(/^Last note: /, ""),
-    )
-    .filter((value): value is string => Boolean(value))
-    .slice(0, 3)
-    .join(", ");
-
-  if (!setText) return null;
-  return `Last: ${setText} · ${formatCompactDate(performance.date)}`;
 }
 
 function getPreviousSetForCurrent(
@@ -630,7 +543,9 @@ export default function ActiveWorkoutScreen() {
   const { getRoutine, isLoading } = useRoutines();
   const routeRoutineId = routineId ?? "";
   const routine = routineId ? getRoutine(routineId) : undefined;
-  const editorKey = workoutId ? `workout-${workoutId}` : `draft-${routeRoutineId || "new"}`;
+  const editorKey = workoutId
+    ? `workout-${workoutId}`
+    : `draft-${routeRoutineId || "new"}`;
 
   const [workout, setWorkout] = useState<ActiveWorkout | null>(null);
   const [initialisedRoutineId, setInitialisedRoutineId] = useState<
@@ -646,6 +561,7 @@ export default function ActiveWorkoutScreen() {
     "startTime" | "endTime" | null
   >(null);
   const [focusedFieldId, setFocusedFieldId] = useState<string | null>(null);
+  const [workoutMenuOpen, setWorkoutMenuOpen] = useState(false);
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(
     null,
   );
@@ -673,10 +589,11 @@ export default function ActiveWorkoutScreen() {
   const previousLookupKeyRef = useRef("");
   const autosaveKeyRef = useRef("");
   const autosavePayloadKeyRef = useRef("");
-  const autosavePayloadRef = useRef<ReturnType<typeof buildWorkoutPayload> | null>(
-    null,
-  );
+  const autosavePayloadRef = useRef<ReturnType<
+    typeof buildWorkoutPayload
+  > | null>(null);
   const autosaveSavingRef = useRef(false);
+  const isDeletingWorkoutRef = useRef(false);
 
   useEffect(() => {
     if (workoutId) {
@@ -937,12 +854,11 @@ export default function ActiveWorkoutScreen() {
     return () => {
       mounted = false;
     };
-  }, [
-    workout,
-  ]);
+  }, [workout]);
 
   useEffect(() => {
     if (!workout || !workout.id) return;
+    if (isDeletingWorkoutRef.current) return;
 
     const workoutIdToSave = workout.id;
     const payload = buildWorkoutPayload(workout);
@@ -1208,8 +1124,7 @@ export default function ActiveWorkoutScreen() {
     const completedWorkout = {
       ...workout,
       status: "completed" as const,
-      endTime:
-        workout.endTime || formatTimeField(new Date()),
+      endTime: workout.endTime || formatTimeField(new Date()),
     };
     setWorkout(completedWorkout);
     void saveFinishedWorkout(completedWorkout);
@@ -1302,10 +1217,45 @@ export default function ActiveWorkoutScreen() {
   };
 
   const openExerciseReorder = () => {
+    setWorkoutMenuOpen(false);
     setSelectedExerciseId(null);
     setDraggingExerciseIndex(null);
     setHoverExerciseIndex(null);
     setIsReorderingExercises(true);
+  };
+
+  const confirmDeleteWorkout = () => {
+    if (!workout?.id) return;
+
+    const workoutToDelete = workout;
+    const workoutIdToDelete = workout.id;
+
+    setWorkoutMenuOpen(false);
+    Alert.alert(
+      "Delete workout?",
+      "This will permanently delete this workout and all of its sets.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            isDeletingWorkoutRef.current = true;
+            setWorkout(null);
+            void deleteWorkout(workoutIdToDelete)
+              .then(() => {
+                backOrReplace("/routines");
+              })
+              .catch((error) => {
+                console.warn("Failed to delete workout", error);
+                isDeletingWorkoutRef.current = false;
+                setWorkout(workoutToDelete);
+                Alert.alert("Could not delete workout", "Please try again.");
+              });
+          },
+        },
+      ],
+    );
   };
 
   const openExerciseReplacement = () => {
@@ -1513,6 +1463,7 @@ export default function ActiveWorkoutScreen() {
             <Pressable
               accessibilityLabel="Workout options"
               accessibilityRole="button"
+              onPress={() => setWorkoutMenuOpen(true)}
               style={styles.headerSquareButton}
             >
               <MaterialCommunityIcons
@@ -1612,20 +1563,13 @@ export default function ActiveWorkoutScreen() {
                     name="plus"
                     size={20}
                   />
-                  <Text style={styles.addExerciseButtonText}>
-                    Add Exercise
-                  </Text>
+                  <Text style={styles.addExerciseButtonText}>Add Exercise</Text>
                 </Pressable>
               </View>
             ) : null}
             {workout.exercises.map((exercise) => {
               const previous = previousPerformance[exercise.id];
-              const previousSummary = previous
-                ? formatPreviousSummary(previous)
-                : null;
-              const previousExerciseNote = previous?.notes?.trim()
-                ? truncatePreviousNote(previous.notes)
-                : null;
+              const previousExerciseNote = previous?.notes?.trim() || undefined;
 
               return (
                 <View key={exercise.id} style={styles.exerciseSection}>
@@ -1646,299 +1590,318 @@ export default function ActiveWorkoutScreen() {
                     </Pressable>
                   </View>
 
-                  {previousSummary ? (
-                    <Text style={styles.previousExerciseSummary}>
-                      {previousSummary}
-                    </Text>
+                  {exercise.notes.length > 0 ||
+                  exerciseNoteTargetId === exercise.id ? (
+                    <TextInput
+                      multiline
+                      onContentSizeChange={(event) =>
+                        setNoteHeights((current) => ({
+                          ...current,
+                          [`exercise-${exercise.id}`]: Math.max(
+                            48,
+                            Math.min(150, event.nativeEvent.contentSize.height),
+                          ),
+                        }))
+                      }
+                      onChangeText={(value) =>
+                        updateExerciseNote(exercise.id, value)
+                      }
+                      onBlur={() => setFocusedFieldId(null)}
+                      onFocus={() =>
+                        setFocusedFieldId(`exercise-${exercise.id}-notes`)
+                      }
+                      placeholder={previousExerciseNote || "Exercise note"}
+                      placeholderTextColor={colors.textMuted}
+                      ref={(ref) => {
+                        exerciseNoteRefs.current[exercise.id] = ref;
+                      }}
+                      scrollEnabled
+                      style={[
+                        styles.exerciseNoteInput,
+                        focusedFieldId === `exercise-${exercise.id}-notes` &&
+                          styles.inputFocused,
+                        {
+                          height: noteHeights[`exercise-${exercise.id}`] ?? 48,
+                        },
+                      ]}
+                      textAlignVertical="top"
+                      value={exercise.notes}
+                    />
                   ) : null}
-                  {previousExerciseNote ? (
-                    <Text style={styles.previousExerciseNote}>
-                      Note: {previousExerciseNote}
-                    </Text>
-                  ) : null}
 
-                {exercise.notes.length > 0 ||
-                exerciseNoteTargetId === exercise.id ? (
-                  <TextInput
-                    multiline
-                    onContentSizeChange={(event) =>
-                      setNoteHeights((current) => ({
-                        ...current,
-                        [`exercise-${exercise.id}`]: Math.max(
-                          48,
-                          Math.min(150, event.nativeEvent.contentSize.height),
-                        ),
-                      }))
-                    }
-                    onChangeText={(value) =>
-                      updateExerciseNote(exercise.id, value)
-                    }
-                    onBlur={() => setFocusedFieldId(null)}
-                    onFocus={() =>
-                      setFocusedFieldId(`exercise-${exercise.id}-notes`)
-                    }
-                    placeholder="Exercise note"
-                    placeholderTextColor={colors.textMuted}
-                    ref={(ref) => {
-                      exerciseNoteRefs.current[exercise.id] = ref;
-                    }}
-                    scrollEnabled
-                    style={[
-                      styles.exerciseNoteInput,
-                      focusedFieldId === `exercise-${exercise.id}-notes` &&
-                        styles.inputFocused,
-                      {
-                        height: noteHeights[`exercise-${exercise.id}`] ?? 48,
-                      },
-                    ]}
-                    textAlignVertical="top"
-                    value={exercise.notes}
-                  />
-                ) : null}
+                  {exercise.sets.map((set) => {
+                    const previousSet = getPreviousSetForCurrent(
+                      set,
+                      exercise.sets,
+                      previous,
+                    );
 
-                {exercise.sets.map((set) => {
-                  const previousSet = getPreviousSetForCurrent(
-                    set,
-                    exercise.sets,
-                    previous,
-                  );
-                  const previousKgText = formatPreviousField(previousSet, "kg");
-                  const previousRepsText = formatPreviousField(
-                    previousSet,
-                    "reps",
-                  );
-                  const previousTimeText = formatPreviousField(
-                    previousSet,
-                    "time",
-                  );
-                  const previousNotesText = formatPreviousField(
-                    previousSet,
-                    "notes",
-                  );
+                    const prevKg =
+                      previousSet?.kg !== null && previousSet?.kg !== undefined
+                        ? String(previousSet.kg)
+                        : undefined;
+                    const prevReps =
+                      previousSet?.reps !== null &&
+                      previousSet?.reps !== undefined
+                        ? String(previousSet.reps)
+                        : undefined;
+                    const prevMins =
+                      previousSet?.minutes !== null &&
+                      previousSet?.minutes !== undefined
+                        ? String(previousSet.minutes)
+                        : undefined;
+                    const prevSecs =
+                      previousSet?.seconds !== null &&
+                      previousSet?.seconds !== undefined
+                        ? String(previousSet.seconds)
+                        : undefined;
+                    const prevNotes = previousSet?.notes?.trim() || undefined;
 
-                  return (
-                    <View key={set.id} style={styles.setRowGroup}>
-                      <View style={styles.setHeader}>
-                      <View style={styles.setNumberLabel} />
-                      {exercise.inputMode === "time" ? (
-                        <>
-                          <Text style={styles.setHeaderText}>min</Text>
-                          <Text style={styles.setHeaderText}>sec</Text>
-                        </>
-                      ) : (
-                        <>
-                          <Text style={styles.setHeaderText}>Kg</Text>
-                          <Text style={styles.setHeaderText}>Reps</Text>
-                        </>
-                      )}
-                      <Text style={[styles.setHeaderText, styles.notesHeader]}>
-                        Notes
-                      </Text>
-                      <View style={styles.removeColumn} />
-                      </View>
+                    return (
+                      <View key={set.id} style={styles.setRowGroup}>
+                        <View style={styles.setHeader}>
+                          <View style={styles.setNumberLabel} />
+                          {exercise.inputMode === "time" ? (
+                            <>
+                              <Text style={styles.setHeaderText}>min</Text>
+                              <Text style={styles.setHeaderText}>sec</Text>
+                            </>
+                          ) : (
+                            <>
+                              <Text style={styles.setHeaderText}>Kg</Text>
+                              <Text style={styles.setHeaderText}>Reps</Text>
+                            </>
+                          )}
+                          <Text
+                            style={[styles.setHeaderText, styles.notesHeader]}
+                          >
+                            Notes
+                          </Text>
+                          <View style={styles.removeColumn} />
+                        </View>
 
-                      <View style={styles.setRow}>
-                      <View
-                        style={[
-                          styles.setCircle,
-                          set.type === "warmup" && styles.warmupSetCircle,
-                          set.type === "drop" && styles.specialSetCircle,
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.setCircleText,
-                            set.type === "warmup" && styles.warmupSetCircleText,
-                            set.type === "drop" && styles.specialSetCircleText,
-                          ]}
-                        >
-                          {getSetLabel(set, exercise.sets)}
-                        </Text>
-                      </View>
+                        <View style={styles.setRow}>
+                          <View
+                            style={[
+                              styles.setCircle,
+                              set.type === "warmup" && styles.warmupSetCircle,
+                              set.type === "drop" && styles.specialSetCircle,
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.setCircleText,
+                                set.type === "warmup" &&
+                                  styles.warmupSetCircleText,
+                                set.type === "drop" &&
+                                  styles.specialSetCircleText,
+                              ]}
+                            >
+                              {getSetLabel(set, exercise.sets)}
+                            </Text>
+                          </View>
 
-                      {exercise.inputMode === "time" ? (
-                        <>
+                          {exercise.inputMode === "time" ? (
+                            <>
+                              <SetInput
+                                fieldId={`${set.id}-minutes`}
+                                focusedFieldId={focusedFieldId}
+                                placeholder={prevMins}
+                                keyboardType="number-pad"
+                                onChangeText={(value) =>
+                                  updateSetField(
+                                    exercise.id,
+                                    set.id,
+                                    "minutes",
+                                    value,
+                                  )
+                                }
+                                setFocusedFieldId={setFocusedFieldId}
+                                value={set.minutes ?? ""}
+                              />
+                              <SetInput
+                                fieldId={`${set.id}-seconds`}
+                                focusedFieldId={focusedFieldId}
+                                placeholder={prevSecs}
+                                keyboardType="number-pad"
+                                onChangeText={(value) =>
+                                  updateSetField(
+                                    exercise.id,
+                                    set.id,
+                                    "seconds",
+                                    value,
+                                  )
+                                }
+                                setFocusedFieldId={setFocusedFieldId}
+                                value={set.seconds ?? ""}
+                              />
+                            </>
+                          ) : (
+                            <>
+                              <SetInput
+                                fieldId={`${set.id}-kg`}
+                                focusedFieldId={focusedFieldId}
+                                placeholder={prevKg}
+                                keyboardType="decimal-pad"
+                                onChangeText={(value) =>
+                                  updateSetField(
+                                    exercise.id,
+                                    set.id,
+                                    "kg",
+                                    value,
+                                  )
+                                }
+                                setFocusedFieldId={setFocusedFieldId}
+                                value={set.kg}
+                              />
+                              <SetInput
+                                fieldId={`${set.id}-reps`}
+                                focusedFieldId={focusedFieldId}
+                                placeholder={prevReps}
+                                keyboardType="number-pad"
+                                onChangeText={(value) =>
+                                  updateSetField(
+                                    exercise.id,
+                                    set.id,
+                                    "reps",
+                                    value,
+                                  )
+                                }
+                                setFocusedFieldId={setFocusedFieldId}
+                                value={set.reps}
+                              />
+                            </>
+                          )}
+
                           <SetInput
-                            fieldId={`${set.id}-minutes`}
+                            fieldId={`${set.id}-notes`}
                             focusedFieldId={focusedFieldId}
-                            helperText={previousTimeText}
-                            keyboardType="number-pad"
+                            placeholder={prevNotes}
+                            multiline
+                            onContentSizeChange={(height) =>
+                              setNoteHeights((current) => ({
+                                ...current,
+                                [set.id]: Math.max(38, Math.min(120, height)),
+                              }))
+                            }
                             onChangeText={(value) =>
                               updateSetField(
                                 exercise.id,
                                 set.id,
-                                "minutes",
+                                "notes",
                                 value,
                               )
                             }
                             setFocusedFieldId={setFocusedFieldId}
-                            value={set.minutes ?? ""}
+                            style={[
+                              styles.notesInput,
+                              {
+                                height: noteHeights[set.id] ?? 38,
+                              },
+                            ]}
+                            value={set.notes}
                           />
-                          <SetInput
-                            fieldId={`${set.id}-seconds`}
-                            focusedFieldId={focusedFieldId}
-                            keyboardType="number-pad"
-                            onChangeText={(value) =>
-                              updateSetField(
-                                exercise.id,
-                                set.id,
-                                "seconds",
-                                value,
-                              )
-                            }
-                            setFocusedFieldId={setFocusedFieldId}
-                            value={set.seconds ?? ""}
-                          />
-                        </>
-                      ) : (
-                        <>
-                          <SetInput
-                            fieldId={`${set.id}-kg`}
-                            focusedFieldId={focusedFieldId}
-                            helperText={previousKgText}
-                            keyboardType="decimal-pad"
-                            onChangeText={(value) =>
-                              updateSetField(exercise.id, set.id, "kg", value)
-                            }
-                            setFocusedFieldId={setFocusedFieldId}
-                            value={set.kg}
-                          />
-                          <SetInput
-                            fieldId={`${set.id}-reps`}
-                            focusedFieldId={focusedFieldId}
-                            helperText={previousRepsText}
-                            keyboardType="number-pad"
-                            onChangeText={(value) =>
-                              updateSetField(exercise.id, set.id, "reps", value)
-                            }
-                            setFocusedFieldId={setFocusedFieldId}
-                            value={set.reps}
-                          />
-                        </>
-                      )}
 
-                      <SetInput
-                        fieldId={`${set.id}-notes`}
-                        focusedFieldId={focusedFieldId}
-                        helperText={previousNotesText}
-                        multiline
-                        onContentSizeChange={(height) =>
-                          setNoteHeights((current) => ({
-                            ...current,
-                            [set.id]: Math.max(38, Math.min(120, height)),
-                          }))
-                        }
-                        onChangeText={(value) =>
-                          updateSetField(exercise.id, set.id, "notes", value)
-                        }
-                        setFocusedFieldId={setFocusedFieldId}
-                        style={[
-                          styles.notesInput,
-                          {
-                            height: noteHeights[set.id] ?? 38,
-                          },
-                        ]}
-                        value={set.notes}
+                          <Pressable
+                            accessibilityLabel="Set options"
+                            accessibilityRole="button"
+                            hitSlop={8}
+                            onPress={() =>
+                              setSelectedSet({
+                                exerciseId: exercise.id,
+                                setId: set.id,
+                              })
+                            }
+                            style={styles.setOptionsButton}
+                          >
+                            <MaterialCommunityIcons
+                              color={colors.textMuted}
+                              name="dots-vertical"
+                              size={22}
+                            />
+                          </Pressable>
+                        </View>
+                      </View>
+                    );
+                  })}
+
+                  <View style={styles.exerciseFooter}>
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => addSetToExercise(exercise.id)}
+                      style={({ pressed }) => [
+                        styles.addSetButton,
+                        pressed && styles.pressed,
+                      ]}
+                    >
+                      <MaterialCommunityIcons
+                        color={colors.accent}
+                        name="plus"
+                        size={18}
                       />
+                      <Text style={styles.addSetText}>Add Set</Text>
+                    </Pressable>
 
+                    <View style={styles.exerciseActionGroup}>
                       <Pressable
-                        accessibilityLabel="Set options"
+                        accessibilityLabel={`${exercise.name} history`}
                         accessibilityRole="button"
-                        hitSlop={8}
                         onPress={() =>
-                          setSelectedSet({
-                            exerciseId: exercise.id,
-                            setId: set.id,
-                          })
+                          showFutureActionAlert(
+                            "History will be available after workouts are saved.",
+                          )
                         }
-                        style={styles.setOptionsButton}
+                        style={({ pressed }) => [
+                          styles.exerciseIconButton,
+                          pressed && styles.pressed,
+                        ]}
                       >
                         <MaterialCommunityIcons
-                          color={colors.textMuted}
-                          name="dots-vertical"
+                          color={colors.accent}
+                          name="history"
                           size={22}
                         />
                       </Pressable>
-                      </View>
-                    </View>
-                  );
-                })}
-
-                <View style={styles.exerciseFooter}>
-                  <Pressable
-                    accessibilityRole="button"
-                    onPress={() => addSetToExercise(exercise.id)}
-                    style={({ pressed }) => [
-                      styles.addSetButton,
-                      pressed && styles.pressed,
-                    ]}
-                  >
-                    <MaterialCommunityIcons
-                      color={colors.accent}
-                      name="plus"
-                      size={18}
-                    />
-                    <Text style={styles.addSetText}>Add Set</Text>
-                  </Pressable>
-
-                  <View style={styles.exerciseActionGroup}>
-                    <Pressable
-                      accessibilityLabel={`${exercise.name} history`}
-                      accessibilityRole="button"
-                      onPress={() =>
-                        showFutureActionAlert(
-                          "History will be available after workouts are saved.",
-                        )
-                      }
-                      style={({ pressed }) => [
-                        styles.exerciseIconButton,
-                        pressed && styles.pressed,
-                      ]}
-                    >
-                      <MaterialCommunityIcons
-                        color={colors.accent}
-                        name="history"
-                        size={22}
-                      />
-                    </Pressable>
-                    <Pressable
-                      accessibilityLabel={`${exercise.name} charts`}
-                      accessibilityRole="button"
-                      onPress={() =>
-                        showFutureActionAlert(
-                          "Charts will be available after workouts are saved.",
-                        )
-                      }
-                      style={({ pressed }) => [
-                        styles.exerciseIconButton,
-                        pressed && styles.pressed,
-                      ]}
-                    >
-                      <MaterialCommunityIcons
-                        color={colors.accent}
-                        name="chart-line"
-                        size={22}
-                      />
-                    </Pressable>
-                    <Pressable
-                      accessibilityLabel={`${exercise.name} star`}
-                      accessibilityRole="button"
-                      onPress={() => toggleExerciseStar(exercise.id)}
-                      style={({ pressed }) => [
-                        styles.exerciseIconButton,
-                        pressed && styles.pressed,
-                      ]}
-                    >
-                      <MaterialCommunityIcons
-                        color={
-                          exercise.isStarred ? colors.accent : colors.textMuted
+                      <Pressable
+                        accessibilityLabel={`${exercise.name} charts`}
+                        accessibilityRole="button"
+                        onPress={() =>
+                          showFutureActionAlert(
+                            "Charts will be available after workouts are saved.",
+                          )
                         }
-                        name={exercise.isStarred ? "star" : "star-outline"}
-                        size={22}
-                      />
-                    </Pressable>
+                        style={({ pressed }) => [
+                          styles.exerciseIconButton,
+                          pressed && styles.pressed,
+                        ]}
+                      >
+                        <MaterialCommunityIcons
+                          color={colors.accent}
+                          name="chart-line"
+                          size={22}
+                        />
+                      </Pressable>
+                      <Pressable
+                        accessibilityLabel={`${exercise.name} star`}
+                        accessibilityRole="button"
+                        onPress={() => toggleExerciseStar(exercise.id)}
+                        style={({ pressed }) => [
+                          styles.exerciseIconButton,
+                          pressed && styles.pressed,
+                        ]}
+                      >
+                        <MaterialCommunityIcons
+                          color={
+                            exercise.isStarred
+                              ? colors.accent
+                              : colors.textMuted
+                          }
+                          name={exercise.isStarred ? "star" : "star-outline"}
+                          size={22}
+                        />
+                      </Pressable>
+                    </View>
                   </View>
-                </View>
                 </View>
               );
             })}
@@ -2243,6 +2206,25 @@ export default function ActiveWorkoutScreen() {
 
         <BottomSheet
           insetsBottom={insets.bottom}
+          onClose={() => setWorkoutMenuOpen(false)}
+          visible={workoutMenuOpen}
+        >
+          <Text style={styles.sheetTitle}>Workout Options</Text>
+          <SheetListAction
+            icon="format-list-bulleted"
+            label="Reorder Exercises"
+            onPress={openExerciseReorder}
+          />
+          <SheetListAction
+            destructive
+            icon="trash-can-outline"
+            label="Delete Workout"
+            onPress={confirmDeleteWorkout}
+          />
+        </BottomSheet>
+
+        <BottomSheet
+          insetsBottom={insets.bottom}
           onClose={() => setSelectedExerciseId(null)}
           visible={selectedExerciseId !== null}
         >
@@ -2368,11 +2350,13 @@ function ExerciseQuickAction({
 }
 
 function SheetListAction({
+  destructive,
   icon,
   label,
   locked,
   onPress,
 }: {
+  destructive?: boolean;
   icon: React.ComponentProps<typeof MaterialCommunityIcons>["name"];
   label: string;
   locked?: boolean;
@@ -2390,12 +2374,24 @@ function SheetListAction({
       ]}
     >
       <MaterialCommunityIcons
-        color={locked ? colors.textMuted : colors.textPrimary}
+        color={
+          destructive
+            ? "#ffaaa1"
+            : locked
+              ? colors.textMuted
+              : colors.textPrimary
+        }
         name={icon}
         size={24}
         style={styles.sheetIcon}
       />
-      <Text style={[styles.sheetText, locked && styles.mutedText]}>
+      <Text
+        style={[
+          styles.sheetText,
+          destructive && styles.deleteText,
+          locked && styles.mutedText,
+        ]}
+      >
         {label}
       </Text>
       {locked ? (
@@ -2489,7 +2485,7 @@ function WorkoutInput({
 function SetInput({
   fieldId,
   focusedFieldId,
-  helperText,
+  placeholder,
   keyboardType,
   multiline,
   onContentSizeChange,
@@ -2500,7 +2496,7 @@ function SetInput({
 }: {
   fieldId: string;
   focusedFieldId: string | null;
-  helperText?: string | null;
+  placeholder?: string;
   keyboardType?: "default" | "decimal-pad" | "number-pad";
   multiline?: boolean;
   onContentSizeChange?: (height: number) => void;
@@ -2525,19 +2521,13 @@ function SetInput({
         }
         onChangeText={onChangeText}
         onFocus={() => setFocusedFieldId(fieldId)}
+        placeholder={placeholder}
         placeholderTextColor={colors.textMuted}
         scrollEnabled={multiline}
         style={[styles.setInput, focused && styles.inputFocused, style]}
         textAlignVertical={multiline ? "top" : "center"}
         value={value}
       />
-      {helperText ? (
-        <Text numberOfLines={1} style={styles.previousFieldText}>
-          {helperText}
-        </Text>
-      ) : (
-        <View style={styles.previousFieldSpacer} />
-      )}
     </View>
   );
 }
@@ -2740,19 +2730,6 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginBottom: 10,
   },
-  previousExerciseSummary: {
-    color: colors.textMuted,
-    fontSize: 12,
-    fontWeight: "600",
-    lineHeight: 17,
-    marginBottom: 2,
-  },
-  previousExerciseNote: {
-    color: colors.textMuted,
-    fontSize: 12,
-    lineHeight: 17,
-    marginBottom: 8,
-  },
   exerciseTitle: {
     color: colors.textPrimary,
     flex: 1,
@@ -2810,29 +2787,12 @@ const styles = StyleSheet.create({
   setRowGroup: {
     marginBottom: 8,
   },
-  previousSetText: {
-    color: colors.textMuted,
-    fontSize: 11,
-    lineHeight: 15,
-    marginLeft: 39,
-    marginTop: 1,
-  },
   setInputWrap: {
     width: 58,
   },
   notesInputWrap: {
     flex: 1,
     minWidth: 80,
-  },
-  previousFieldText: {
-    color: colors.textMuted,
-    fontSize: 10,
-    lineHeight: 13,
-    marginTop: 2,
-  },
-  previousFieldSpacer: {
-    height: 15,
-    marginTop: 2,
   },
   setRow: {
     alignItems: "flex-start",
@@ -2890,7 +2850,6 @@ const styles = StyleSheet.create({
   },
   notesInput: {
     color: "rgba(230, 231, 235, 0.8)",
-    flex: 1,
     lineHeight: 19,
     maxHeight: 120,
     height: 38,

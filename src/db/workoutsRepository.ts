@@ -273,6 +273,22 @@ export async function updateWorkout(id: string, input: WorkoutInput) {
   });
 }
 
+export async function deleteWorkout(id: string) {
+  const db = await getDatabase();
+
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(
+      `DELETE FROM workout_sets
+       WHERE workoutExerciseId IN (
+         SELECT id FROM workout_exercises WHERE workoutId = ?
+       )`,
+      id,
+    );
+    await db.runAsync("DELETE FROM workout_exercises WHERE workoutId = ?", id);
+    await db.runAsync("DELETE FROM workouts WHERE id = ?", id);
+  });
+}
+
 export async function getSavedWorkout(id: string): Promise<SavedWorkout | null> {
   const db = await getDatabase();
   const workout = await db.getFirstAsync<WorkoutRow>(
