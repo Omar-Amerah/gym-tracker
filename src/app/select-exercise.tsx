@@ -1,6 +1,6 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Animated,
   Modal,
@@ -17,6 +17,14 @@ import {
 } from "react-native-safe-area-context";
 
 import { AppHeader } from "@/components/app-header";
+import {
+  createCategory,
+  deleteCategory,
+  listCategories,
+  listExercises,
+} from "@/db/exercisesRepository";
+import type { CategoryRecord, ExerciseRecord } from "@/db/schema";
+import { replaceActiveWorkoutExercise } from "@/state/activeWorkoutSelection";
 import { useRoutines } from "@/state/routines";
 import { colors } from "@/theme/colors";
 import { radius } from "@/theme/radius";
@@ -89,32 +97,19 @@ function BottomSheet({
   );
 }
 
-const ALL_EXERCISES = [
-  { id: "1", name: "Crunch", category: "Abs" },
-  { id: "2", name: "Plank", category: "Abs" },
-  { id: "3", name: "Pull Up", category: "Back" },
-  { id: "4", name: "Barbell Row", category: "Back" },
-  { id: "5", name: "Bicep Curl", category: "Biceps" },
-  { id: "6", name: "Bench Press", category: "Chest" },
-  { id: "7", name: "Squat", category: "Legs" },
-  { id: "8", name: "Romanian Deadlift", category: "Legs" },
-];
-
 export default function SelectExerciseScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { activeRoutineId } = useRoutines();
+  const { activeWorkoutRoutineId, mode } = useLocalSearchParams<{
+    activeWorkoutRoutineId?: string;
+    mode?: string;
+  }>();
+  const { activeRoutineId, addExercise } = useRoutines();
+  const isActiveWorkoutReplacement = mode === "active-workout-replace";
 
-  const [categories, setCategories] = useState([
-    "Abs",
-    "Back",
-    "Biceps",
-    "Cardio",
-    "Chest",
-    "Legs",
-    "Shoulders",
-    "Triceps",
-  ]);
+  const [categories, setCategories] = useState<CategoryRecord[]>([]);
+  const [exerciseResults, setExerciseResults] = useState<ExerciseRecord[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   const [exerciseMode, setExerciseMode] = useState<"regular" | "superset">(
     "regular",
@@ -126,26 +121,68 @@ export default function SelectExerciseScreen() {
   const [optionsSheetOpen, setOptionsSheetOpen] = useState(false);
   const [createSheetOpen, setCreateSheetOpen] = useState(false);
   const [deleteSheetOpen, setDeleteSheetOpen] = useState(false);
+  const [categoryPendingDelete, setCategoryPendingDelete] =
+    useState<CategoryRecord | null>(null);
 
   const [newCategoryName, setNewCategoryName] = useState("");
 
-  const filteredExercises = useMemo(() => {
-    if (!searchQuery.trim()) return ALL_EXERCISES;
-    return ALL_EXERCISES.filter((ex) =>
-      ex.name.toLowerCase().includes(searchQuery.toLowerCase()),
-    );
+  useEffect(() => {
+    let mounted = true;
+
+    Promise.all([listCategories(), listExercises(searchQuery)])
+      .then(([storedCategories, storedExercises]) => {
+        if (!mounted) return;
+        setCategories(storedCategories);
+        setExerciseResults(storedExercises);
+      })
+      .catch((error) => {
+        console.error("Failed to load exercise selection data", error);
+      })
+      .finally(() => {
+        if (mounted) setIsLoading(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
   }, [searchQuery]);
 
-  const handleCreateCategory = () => {
-    if (newCategoryName.trim()) {
-      setCategories((prev) => [...prev, newCategoryName.trim()].sort());
-      setNewCategoryName("");
-      setCreateSheetOpen(false);
-    }
+  const handleCreateCategory = async () => {
+    const trimmedName = newCategoryName.trim();
+    if (!trimmedName) return;
+
+    await createCategory(trimmedName);
+    setCategories(await listCategories());
+    setNewCategoryName("");
+    setCreateSheetOpen(false);
   };
 
-  const handleDeleteCategory = (categoryToDelete: string) => {
-    setCategories((prev) => prev.filter((c) => c !== categoryToDelete));
+  const handleDeleteCategory = async (categoryToDelete: string) => {
+    await deleteCategory(categoryToDelete);
+    setCategories(await listCategories());
+    setExerciseResults(await listExercises(searchQuery));
+    setCategoryPendingDelete(null);
+    setDeleteSheetOpen(false);
+  };
+
+  const selectExercise = (exercise: ExerciseRecord) => {
+    if (isActiveWorkoutReplacement && activeWorkoutRoutineId) {
+      const replaced = replaceActiveWorkoutExercise(
+        activeWorkoutRoutineId,
+        exercise,
+      );
+      if (replaced) {
+        router.dismiss(1);
+      }
+      return;
+    }
+
+    if (!activeRoutineId) return;
+    addExercise(activeRoutineId, exercise.name, exercise.id);
+    router.replace({
+      pathname: "/routine/[id]",
+      params: { id: activeRoutineId },
+    });
   };
 
   return (
@@ -192,14 +229,16 @@ export default function SelectExerciseScreen() {
           <AppHeader
             leftAction="close"
             onBackPress={() =>
-              backOrReplace(
-                activeRoutineId
-                  ? {
-                      pathname: "/routine/[id]",
-                      params: { id: activeRoutineId },
-                    }
-                  : "/routines",
-              )
+              isActiveWorkoutReplacement
+                ? router.dismiss(1)
+                : backOrReplace(
+                    activeRoutineId
+                      ? {
+                          pathname: "/routine/[id]",
+                          params: { id: activeRoutineId },
+                        }
+                      : "/routines",
+                  )
             }
             title="Select Exercise"
             onMorePress={() => setOptionsSheetOpen(true)} // Uses the global standard options menu
@@ -230,12 +269,16 @@ export default function SelectExerciseScreen() {
             {!isSearching
               ? categories.map((category) => (
                   <Pressable
-                    key={category}
+                    key={category.id}
                     // 👇 This is the updated dynamic route
                     onPress={() =>
                       router.push({
                         pathname: "/select-exercise/[category]",
-                        params: { category },
+                        params: {
+                          activeWorkoutRoutineId,
+                          category: category.name,
+                          mode,
+                        },
                       })
                     }
                     style={({ pressed }) => [
@@ -243,12 +286,13 @@ export default function SelectExerciseScreen() {
                       pressed && styles.rowPressed,
                     ]}
                   >
-                    <Text style={styles.categoryText}>{category}</Text>
+                    <Text style={styles.categoryText}>{category.name}</Text>
                   </Pressable>
                 ))
-              : filteredExercises.map((exercise) => (
+              : exerciseResults.map((exercise) => (
                   <Pressable
                     key={exercise.id}
+                    onPress={() => selectExercise(exercise)}
                     style={({ pressed }) => [
                       styles.categoryRow,
                       pressed && styles.rowPressed,
@@ -262,6 +306,7 @@ export default function SelectExerciseScreen() {
                     </View>
                   </Pressable>
                 ))}
+            {isLoading ? <Text style={styles.emptyText}>Loading...</Text> : null}
           </View>
         </ScrollView>
 
@@ -374,7 +419,9 @@ export default function SelectExerciseScreen() {
 
           <Pressable
             disabled={!newCategoryName.trim()}
-            onPress={handleCreateCategory}
+            onPress={() => {
+              void handleCreateCategory();
+            }}
             style={({ pressed }) => [
               styles.createButton,
               !newCategoryName.trim() && styles.buttonDisabled,
@@ -388,36 +435,89 @@ export default function SelectExerciseScreen() {
         {/* 3. DELETE CATEGORY SHEET */}
         <BottomSheet
           insetsBottom={insets.bottom}
-          onClose={() => setDeleteSheetOpen(false)}
+          onClose={() => {
+            setDeleteSheetOpen(false);
+            setCategoryPendingDelete(null);
+          }}
           visible={deleteSheetOpen}
         >
-          <Text style={styles.sheetTitle}>Delete Category</Text>
-          <Text style={styles.sheetDescription}>
-            Select a category to permanently remove it.
-          </Text>
+          {categoryPendingDelete ? (
+            <>
+              <Text style={styles.sheetTitle}>Delete Category?</Text>
+              <Text style={styles.sheetDescription}>
+                This will remove {categoryPendingDelete.name} and its exercises
+                from the library.
+              </Text>
 
-          <ScrollView
-            style={styles.deleteListScroll}
-            showsVerticalScrollIndicator={false}
-          >
-            {categories.map((cat) => (
               <Pressable
-                key={cat}
-                onPress={() => handleDeleteCategory(cat)}
+                accessibilityRole="button"
+                onPress={() => {
+                  void handleDeleteCategory(categoryPendingDelete.name);
+                }}
                 style={({ pressed }) => [
-                  styles.deleteCategoryRow,
+                  styles.sheetAction,
                   pressed && styles.rowPressed,
                 ]}
               >
-                <Text style={styles.categoryText}>{cat}</Text>
                 <MaterialCommunityIcons
-                  name="trash-can-outline"
-                  size={22}
                   color="#ffaaa1"
+                  name="trash-can-outline"
+                  size={24}
+                  style={styles.sheetIcon}
                 />
+                <Text style={[styles.sheetText, styles.deleteText]}>
+                  Delete Category
+                </Text>
               </Pressable>
-            ))}
-          </ScrollView>
+
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setCategoryPendingDelete(null)}
+                style={({ pressed }) => [
+                  styles.sheetAction,
+                  pressed && styles.rowPressed,
+                ]}
+              >
+                <MaterialCommunityIcons
+                  color={colors.textPrimary}
+                  name="close"
+                  size={24}
+                  style={styles.sheetIcon}
+                />
+                <Text style={styles.sheetText}>Cancel</Text>
+              </Pressable>
+            </>
+          ) : (
+            <>
+              <Text style={styles.sheetTitle}>Delete Category</Text>
+              <Text style={styles.sheetDescription}>
+                Select a category to permanently remove it.
+              </Text>
+
+              <ScrollView
+                style={styles.deleteListScroll}
+                showsVerticalScrollIndicator={false}
+              >
+                {categories.map((cat) => (
+                  <Pressable
+                    key={cat.id}
+                    onPress={() => setCategoryPendingDelete(cat)}
+                    style={({ pressed }) => [
+                      styles.deleteCategoryRow,
+                      pressed && styles.rowPressed,
+                    ]}
+                  >
+                    <Text style={styles.categoryText}>{cat.name}</Text>
+                    <MaterialCommunityIcons
+                      name="trash-can-outline"
+                      size={22}
+                      color="#ffaaa1"
+                    />
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </>
+          )}
         </BottomSheet>
       </View>
     </SafeAreaView>
@@ -468,6 +568,12 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 12,
     marginTop: 2,
+  },
+  emptyText: {
+    color: colors.textSecondary,
+    fontSize: 16,
+    paddingTop: 24,
+    textAlign: "center",
   },
 
   // --- TOGGLE ---

@@ -96,6 +96,7 @@ export default function RoutinesScreen() {
     createRoutine,
     deleteRoutine,
     duplicateRoutine,
+    isLoading,
     routines,
     setActiveRoutineId,
   } = useRoutines();
@@ -157,6 +158,9 @@ export default function RoutinesScreen() {
                 </Pressable>
               </View>
             ))}
+            {isLoading ? (
+              <Text style={styles.emptyText}>Loading...</Text>
+            ) : null}
           </View>
         </ScrollView>
 
@@ -347,6 +351,12 @@ const styles = StyleSheet.create({
     letterSpacing: 0,
     marginTop: 4,
   },
+  emptyText: {
+    color: colors.textSecondary,
+    fontSize: 16,
+    paddingTop: 24,
+    textAlign: "center",
+  },
   rowMenu: {
     alignItems: "center",
     alignSelf: "stretch",
@@ -364,9 +374,9 @@ const styles = StyleSheet.create({
   fab: {
     alignItems: "center",
     backgroundColor: colors.fabBackground,
-    borderRadius: 24,
-    bottom: 16,
-    height: 72,
+    borderRadius: 16,
+    bottom: 12,
+    height: 58,
     justifyContent: "center",
     position: "absolute",
     right: 24,
@@ -374,8 +384,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 7 },
     shadowOpacity: 0.34,
     shadowRadius: 12,
-    elevation: 5,
-    width: 72,
+    width: 60,
     zIndex: 20,
   },
   addButtonPressed: {
@@ -383,23 +392,23 @@ const styles = StyleSheet.create({
   },
   plusIcon: {
     alignItems: "center",
-    height: 28,
+    height: 22,
     justifyContent: "center",
-    width: 28,
+    width: 22,
   },
   plusVertical: {
     backgroundColor: colors.background,
     borderRadius: radius.xs,
-    height: 28,
+    height: 22,
     position: "absolute",
-    width: 3,
+    width: 2,
   },
   plusHorizontal: {
     backgroundColor: colors.background,
     borderRadius: radius.xs,
-    height: 3,
+    height: 2,
     position: "absolute",
-    width: 28,
+    width: 22,
   },
   sheetContainer: {
     flex: 1,

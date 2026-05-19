@@ -131,7 +131,7 @@ function ReorderRow({
 
 export default function ReorderExercisesScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { getRoutine, moveExerciseToIndex } = useRoutines();
+  const { getRoutine, isLoading, moveExerciseToIndex } = useRoutines();
   const routine = getRoutine(id);
 
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
@@ -154,6 +154,7 @@ export default function ReorderExercisesScreen() {
         />
 
         <View style={styles.list}>
+          {isLoading ? <Text style={styles.emptyText}>Loading...</Text> : null}
           {exercises.map((exercise, index) => (
             <ReorderRow
               key={exercise.id}
@@ -213,6 +214,12 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "500",
     letterSpacing: 0,
+  },
+  emptyText: {
+    color: colors.textSecondary,
+    fontSize: 16,
+    paddingTop: 24,
+    textAlign: "center",
   },
   handle: { gap: 4, padding: 16 },
   handleLine: {

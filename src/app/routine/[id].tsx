@@ -96,6 +96,7 @@ export default function RoutineDetailScreen() {
   const {
     deleteRoutine,
     getRoutine,
+    isLoading,
     removeExercise,
     setActiveRoutineId,
     updateExercise,
@@ -117,7 +118,9 @@ export default function RoutineDetailScreen() {
     return (
       <SafeAreaView edges={["top", "bottom"]} style={styles.safeArea}>
         <View style={styles.emptyState}>
-          <Text style={styles.emptyText}>Routine not found.</Text>
+          <Text style={styles.emptyText}>
+            {isLoading ? "Loading..." : "Routine not found."}
+          </Text>
         </View>
       </SafeAreaView>
     );
@@ -143,7 +146,19 @@ export default function RoutineDetailScreen() {
           onBackPress={() => backOrReplace("/routines")}
           onMorePress={() => setRoutineMenuOpen(true)}
           rightAccessory={
-            <Pressable accessibilityRole="button" style={styles.startPill}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() =>
+                router.push({
+                  pathname: "/active-workout/[routineId]",
+                  params: { routineId },
+                })
+              }
+              style={({ pressed }) => [
+                styles.startPill,
+                pressed && styles.buttonPressed,
+              ]}
+            >
               <Text style={styles.startPillText}>START</Text>
             </Pressable>
           }

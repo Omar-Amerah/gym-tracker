@@ -1,76 +1,51 @@
+import { useFocusEffect } from "@react-navigation/native";
 import { useRouter } from "expo-router";
+import { useCallback, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AppHeader } from "@/components/app-header";
+import {
+  listLoggedWorkouts,
+  type LoggedWorkout,
+} from "@/db/workoutsRepository";
 import { colors } from "@/theme/colors";
 import { radius } from "@/theme/radius";
 import { spacing } from "@/theme/spacing";
 import { typography } from "@/theme/typography";
 
-const workouts = [
-  {
-    id: "1",
-    weekday: "Sun",
-    day: "17",
-    month: "May",
-    title: "Functional/Fencing Day",
-    duration: 75,
-    exercises: [
-      "3x Medball Rotations",
-      "3x Plank",
-      "3x Pallof Press",
-      "3x Diverging Lat Pulldown",
-      "3x Face Pulls",
-      "3x Rear Delt Fly",
-      "3x Cable Reverse Bicep Curls",
-      "3x Dumbbell Bicep Curl",
-      "2x Wrist Curls",
-      "2x Reverse Wrist Curls",
-      "2x External Rotation",
-    ],
-  },
-  {
-    id: "2",
-    weekday: "Sat",
-    day: "16",
-    month: "May",
-    title: "Lower Body",
-    duration: 101,
-    exercises: [
-      "3x Box Jumps",
-      "3x Standing Band Knee Drives",
-      "3x Squat",
-      "3x Romanian Deadlifts",
-      "3x Bulgarian Split Squats",
-      "3x Calf Raises",
-      "3x Cable Woodchops",
-    ],
-  },
-  {
-    id: "3",
-    weekday: "Fri",
-    day: "15",
-    month: "May",
-    title: "Upper body",
-    duration: 98,
-    exercises: [
-      "3x Bench Press",
-      "3x Barbell Row",
-      "3x Military Press",
-      "3x Single-Arm Landmine Punch Press",
-      "3x Diverging Lat Pulldown",
-      "3x Pec Fly",
-      "3x Face Pulls",
-      "3x Pushdowns",
-      "3x Cable Lateral Raise",
-      "3x Dumbbell Bicep Curl",
-    ],
-  },
-] as const;
-
 export default function LogScreen() {
   const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [workouts, setWorkouts] = useState<LoggedWorkout[]>([]);
+
+  useFocusEffect(
+    useCallback(() => {
+      let mounted = true;
+
+      setIsLoading(true);
+      setError(null);
+      listLoggedWorkouts()
+        .then((savedWorkouts) => {
+          if (mounted) setWorkouts(savedWorkouts);
+        })
+        .catch((loadError) => {
+          console.error("Failed to load logged workouts", loadError);
+          if (mounted) {
+            setError("Could not load workouts.");
+            setWorkouts([]);
+          }
+        })
+        .finally(() => {
+          if (mounted) setIsLoading(false);
+        });
+
+      return () => {
+        mounted = false;
+      };
+    }, []),
+  );
 
   return (
     <SafeAreaView edges={["top"]} style={styles.safeArea}>
@@ -82,6 +57,13 @@ export default function LogScreen() {
           style={styles.scroll}
           showsVerticalScrollIndicator={false}
         >
+          {isLoading ? (
+            <Text style={styles.stateText}>Loading workouts...</Text>
+          ) : null}
+          {error ? <Text style={styles.stateText}>{error}</Text> : null}
+          {!isLoading && !error && workouts.length === 0 ? (
+            <Text style={styles.stateText}>No logged workouts yet.</Text>
+          ) : null}
           {workouts.map((workout, index) => (
             <View key={workout.id} style={styles.entry}>
               <View style={styles.dateColumn}>
@@ -101,8 +83,12 @@ export default function LogScreen() {
                 ]}
               >
                 <View style={styles.cardHeader}>
-                  <Text style={styles.workoutTitle}>{workout.title}</Text>
-                  <Text style={styles.duration}>{workout.duration} min</Text>
+                  <Text style={styles.workoutTitle}>{workout.name}</Text>
+                  <Text style={styles.duration}>
+                    {workout.durationMinutes === null
+                      ? "-- min"
+                      : `${workout.durationMinutes} min`}
+                  </Text>
                 </View>
 
                 <View style={styles.exerciseList}>
@@ -151,6 +137,12 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingTop: 0,
+  },
+  stateText: {
+    color: colors.textSecondary,
+    fontSize: 16,
+    paddingHorizontal: spacing.xxl,
+    paddingTop: spacing.xl,
   },
   entry: {
     flexDirection: "row",

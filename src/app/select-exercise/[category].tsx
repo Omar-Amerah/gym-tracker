@@ -1,6 +1,6 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Animated,
   Modal,
@@ -17,9 +17,13 @@ import {
 } from "react-native-safe-area-context";
 
 import { AppHeader } from "@/components/app-header";
+import { listExercisesByCategory } from "@/db/exercisesRepository";
+import type { ExerciseRecord } from "@/db/schema";
+import { replaceActiveWorkoutExercise } from "@/state/activeWorkoutSelection";
 import { useRoutines } from "@/state/routines";
 import { colors } from "@/theme/colors";
 import { spacing } from "@/theme/spacing";
+import { backOrReplace } from "@/utils/navigation";
 
 // --- REUSABLE BOTTOM SHEET ---
 function BottomSheet({
@@ -98,47 +102,63 @@ function BottomSheet({
   );
 }
 
-const ALL_EXERCISES = [
-  { id: "1", name: "Cable Woodchops", category: "Abs" },
-  { id: "2", name: "Crunches", category: "Abs" },
-  { id: "3", name: "Leg Raises", category: "Abs" },
-  { id: "4", name: "Medball Rotations", category: "Abs" },
-  { id: "5", name: "Pallof Press", category: "Abs" },
-  { id: "6", name: "Plank", category: "Abs" },
-  { id: "7", name: "Pull Up", category: "Back" },
-  { id: "8", name: "Bench Press", category: "Chest" },
-];
-
 export default function CategoryExercisesScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { category } = useLocalSearchParams<{ category: string }>();
+  const { activeWorkoutRoutineId, category, mode } = useLocalSearchParams<{
+    activeWorkoutRoutineId?: string;
+    category: string;
+    mode?: string;
+  }>();
   const { activeRoutineId, addExercise } = useRoutines();
+  const isActiveWorkoutReplacement = mode === "active-workout-replace";
 
   const [exerciseMode, setExerciseMode] = useState<"regular" | "superset">(
     "regular",
   );
   const [isSearching, setIsSearching] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [exercises, setExercises] = useState<ExerciseRecord[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   // State for the options menu
   const [optionsExerciseId, setOptionsExerciseId] = useState<string | null>(
     null,
   );
 
-  const filteredExercises = useMemo(() => {
-    const categoryExercises = ALL_EXERCISES.filter(
-      (ex) => ex.category === category,
-    );
-    if (!searchQuery.trim()) return categoryExercises;
-    return categoryExercises.filter((ex) =>
-      ex.name.toLowerCase().includes(searchQuery.toLowerCase()),
-    );
+  useEffect(() => {
+    let mounted = true;
+
+    listExercisesByCategory(category ?? "", searchQuery)
+      .then((storedExercises) => {
+        if (mounted) setExercises(storedExercises);
+      })
+      .catch((error) => {
+        console.error("Failed to load exercises", error);
+      })
+      .finally(() => {
+        if (mounted) setIsLoading(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
   }, [category, searchQuery]);
 
-  function selectExercise(name: string) {
+  function selectExercise(exercise: ExerciseRecord) {
+    if (isActiveWorkoutReplacement && activeWorkoutRoutineId) {
+      const replaced = replaceActiveWorkoutExercise(
+        activeWorkoutRoutineId,
+        exercise,
+      );
+      if (replaced) {
+        router.dismiss(2);
+      }
+      return;
+    }
+
     if (!activeRoutineId) return;
-    addExercise(activeRoutineId, name);
+    addExercise(activeRoutineId, exercise.name, exercise.id);
     router.replace({
       pathname: "/routine/[id]",
       params: { id: activeRoutineId },
@@ -187,7 +207,19 @@ export default function CategoryExercisesScreen() {
         ) : (
           <AppHeader
             leftAction="back"
-            onBackPress={() => router.back()}
+            onBackPress={() =>
+              backOrReplace(
+                isActiveWorkoutReplacement
+                  ? {
+                      pathname: "/select-exercise",
+                      params: {
+                        activeWorkoutRoutineId,
+                        mode,
+                      },
+                    }
+                  : "/select-exercise",
+              )
+            }
             title={category || "Exercises"}
             rightAccessory={
               <View style={styles.headerRightGroup}>
@@ -202,7 +234,12 @@ export default function CategoryExercisesScreen() {
                   />
                 </Pressable>
                 <Pressable
-                  onPress={() => router.push("/create-exercise")}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/create-exercise",
+                      params: { category },
+                    })
+                  }
                   style={styles.headerIcon}
                 >
                   <MaterialCommunityIcons
@@ -225,11 +262,11 @@ export default function CategoryExercisesScreen() {
           keyboardDismissMode="on-drag"
         >
           <View style={styles.list}>
-            {filteredExercises.length > 0 ? (
-              filteredExercises.map((exercise) => (
+            {exercises.length > 0 ? (
+              exercises.map((exercise) => (
                 <Pressable
                   key={exercise.id}
-                  onPress={() => selectExercise(exercise.name)}
+                  onPress={() => selectExercise(exercise)}
                   style={({ pressed }) => [
                     styles.exerciseRow,
                     pressed && styles.rowPressed,
@@ -254,8 +291,9 @@ export default function CategoryExercisesScreen() {
             ) : (
               <View style={styles.emptySearch}>
                 <Text style={styles.emptySearchText}>
-                  No exercises found{" "}
-                  {searchQuery ? `for "${searchQuery}"` : `in ${category}`}
+                  {isLoading
+                    ? "Loading..."
+                    : `No exercises found ${searchQuery ? `for "${searchQuery}"` : `in ${category}`}`}
                 </Text>
               </View>
             )}
@@ -311,8 +349,8 @@ export default function CategoryExercisesScreen() {
           <Pressable
             onPress={() => {
               const id = optionsExerciseId;
+              if (!id) return;
               setOptionsExerciseId(null);
-              // Route to the new Edit screen we are about to make
               setTimeout(() => {
                 router.push({
                   pathname: "/edit-exercise/[id]",
