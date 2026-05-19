@@ -6,6 +6,7 @@ import { useRoutines } from '@/state/routines';
 import { colors } from '@/theme/colors';
 import { radius } from '@/theme/radius';
 import { spacing } from '@/theme/spacing';
+import { backOrReplace } from '@/utils/navigation';
 
 const exercises = [
   { id: '1', name: 'Cable Woodchops', info: false },
@@ -31,7 +32,7 @@ export default function AbsExerciseScreen() {
     <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
       <View style={styles.screen}>
         <View style={styles.header}>
-          <Pressable accessibilityLabel="Back to categories" accessibilityRole="button" onPress={() => router.back()} style={styles.backButton}>
+          <Pressable accessibilityLabel="Back to categories" accessibilityRole="button" onPress={() => backOrReplace('/select-exercise')} style={styles.backButton}>
             <View style={styles.backStem} />
             <View style={styles.backHeadTop} />
             <View style={styles.backHeadBottom} />

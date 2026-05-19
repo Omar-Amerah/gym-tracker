@@ -34,55 +34,39 @@ function BottomSheet({
   visible: boolean;
 }) {
   const [showModal, setShowModal] = useState(visible);
-  const translateY = useRef(new Animated.Value(400)).current;
-  const fadeAnim = useRef(new Animated.Value(0)).current; // New opacity value
+  const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (visible) {
       setShowModal(true);
-      Animated.parallel([
-        Animated.spring(translateY, {
-          toValue: 0,
-          useNativeDriver: true,
-          bounciness: 0,
-          speed: 14,
-        }),
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 200,
-          useNativeDriver: true,
-        }),
-      ]).start();
+      fadeAnim.setValue(0);
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 120,
+        useNativeDriver: true,
+      }).start();
     } else {
-      Animated.parallel([
-        Animated.timing(translateY, {
-          toValue: 400,
-          duration: 250, // Slightly slower slide for a smooth exit
-          useNativeDriver: true,
-        }),
-        Animated.timing(fadeAnim, {
-          toValue: 0,
-          duration: 250, // Perfectly synced fade out
-          useNativeDriver: true,
-        }),
-      ]).start(() => {
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 120,
+        useNativeDriver: true,
+      }).start(() => {
         setShowModal(false);
       });
     }
-  }, [visible, translateY, fadeAnim]);
+  }, [visible, fadeAnim]);
 
   if (!showModal) return null;
 
   return (
     <Modal
-      animationType="none" // Turn off native modal fading!
+      animationType="none"
       onRequestClose={onClose}
       transparent
       visible={showModal}
     >
-      <View style={styles.sheetContainer}>
-        {/* Custom Animated Background */}
-        <Animated.View style={[styles.scrimOverlay, { opacity: fadeAnim }]} />
+      <Animated.View style={[styles.sheetContainer, { opacity: fadeAnim }]}>
+        <View style={styles.scrimOverlay} />
 
         {/* Invisible tap target to dismiss */}
         <Pressable
@@ -91,19 +75,17 @@ function BottomSheet({
           style={StyleSheet.absoluteFillObject}
         />
 
-        {/* Sliding Sheet */}
-        <Animated.View
+        <View
           style={[
             styles.sheet,
             {
               paddingBottom: 34 + insetsBottom,
-              transform: [{ translateY }],
             },
           ]}
         >
           {children}
-        </Animated.View>
-      </View>
+        </View>
+      </Animated.View>
     </Modal>
   );
 }
@@ -398,7 +380,6 @@ const styles = StyleSheet.create({
   },
   addButtonPressed: {
     opacity: 0.86,
-    transform: [{ scale: 0.97 }],
   },
   plusIcon: {
     alignItems: "center",

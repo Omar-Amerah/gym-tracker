@@ -1,35 +1,17 @@
-import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  Animated,
-  PanResponder,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { useLocalSearchParams } from "expo-router";
+import { useMemo, useRef, useState } from "react";
+import { Animated, PanResponder, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { AppHeader } from "@/components/app-header";
 import { RoutineExercise, useRoutines } from "@/state/routines";
 import { colors } from "@/theme/colors";
 import { radius } from "@/theme/radius";
 import { spacing } from "@/theme/spacing";
+import { backOrReplace } from "@/utils/navigation";
 
 // The true physical height of a row: 62 (height) + 4 (marginBottom)
 const ITEM_HEIGHT = 66;
-
-function BackButton({ onPress }: { onPress: () => void }) {
-  return (
-    <Pressable
-      accessibilityLabel="Go back"
-      accessibilityRole="button"
-      onPress={onPress}
-      style={styles.backButton}
-    >
-      <Text style={styles.backText}>←</Text>
-    </Pressable>
-  );
-}
 
 function ReorderRow({
   draggingIndex,
@@ -52,7 +34,7 @@ function ReorderRow({
 }) {
   const isDragging = draggingIndex === index;
 
-  // Determine if this specific "bystander" card needs to shift up or down to make room
+  // Pure instant math - no springs or effects needed!
   const isShiftedUp =
     draggingIndex !== null &&
     hoverIndex !== null &&
@@ -63,11 +45,14 @@ function ReorderRow({
     hoverIndex !== null &&
     draggingIndex > index &&
     hoverIndex <= index;
+  const shiftOffset = isShiftedUp
+    ? -ITEM_HEIGHT
+    : isShiftedDown
+      ? ITEM_HEIGHT
+      : 0;
 
   const dragY = useRef(new Animated.Value(0)).current;
-  const shiftAnim = useRef(new Animated.Value(0)).current;
 
-  // THE FIX: Store EVERYTHING in the ref so the PanResponder never gets destroyed
   const gestureStateRef = useRef({
     index,
     hoverIndex,
@@ -75,8 +60,6 @@ function ReorderRow({
     onHoverIndexChange,
     onDrop,
   });
-
-  // Keep it synced with the latest render
   gestureStateRef.current = {
     index,
     hoverIndex,
@@ -84,20 +67,6 @@ function ReorderRow({
     onHoverIndexChange,
     onDrop,
   };
-
-  // Smoothly slide the bystander cards out of the way
-  useEffect(() => {
-    let toValue = 0;
-    if (isShiftedUp) toValue = -ITEM_HEIGHT;
-    else if (isShiftedDown) toValue = ITEM_HEIGHT;
-
-    Animated.spring(shiftAnim, {
-      toValue,
-      useNativeDriver: true,
-      bounciness: 0,
-      speed: 16,
-    }).start();
-  }, [isShiftedUp, isShiftedDown, shiftAnim]);
 
   const panResponder = useMemo(
     () =>
@@ -109,7 +78,6 @@ function ReorderRow({
         onPanResponderMove: (_, gesture) => {
           dragY.setValue(gesture.dy);
           const currentIndex = gestureStateRef.current.index;
-
           const nextIndex = Math.max(
             0,
             Math.min(
@@ -117,50 +85,29 @@ function ReorderRow({
               currentIndex + Math.round(gesture.dy / ITEM_HEIGHT),
             ),
           );
-
           if (nextIndex !== gestureStateRef.current.hoverIndex) {
             gestureStateRef.current.onHoverIndexChange(nextIndex);
           }
         },
         onPanResponderRelease: () => {
+          dragY.setValue(0); // Instantly snap back visual offset
           const finalHover =
             gestureStateRef.current.hoverIndex ?? gestureStateRef.current.index;
-          const dropOffset =
-            (finalHover - gestureStateRef.current.index) * ITEM_HEIGHT;
-
-          // Smoothly snap the dragged card into its final resting slot
-          Animated.spring(dragY, {
-            toValue: dropOffset,
-            useNativeDriver: true,
-            bounciness: 0,
-            speed: 20,
-          }).start(() => {
-            dragY.setValue(0);
-            shiftAnim.setValue(0);
-            gestureStateRef.current.onDrop(
-              gestureStateRef.current.index,
-              finalHover,
-            );
-          });
+          gestureStateRef.current.onDrop(
+            gestureStateRef.current.index,
+            finalHover,
+          );
         },
         onPanResponderTerminate: () => {
-          Animated.spring(dragY, { toValue: 0, useNativeDriver: true }).start(
-            () => {
-              dragY.setValue(0);
-              shiftAnim.setValue(0);
-              gestureStateRef.current.onDrop(
-                gestureStateRef.current.index,
-                gestureStateRef.current.index,
-              );
-            },
+          dragY.setValue(0);
+          gestureStateRef.current.onDrop(
+            gestureStateRef.current.index,
+            gestureStateRef.current.index,
           );
         },
       }),
-    // NO CALLBACKS IN THIS ARRAY! This prevents the glitching mid-drag.
-    [dragY, shiftAnim, itemCount],
+    [dragY, itemCount],
   );
-
-  const translateY = isDragging ? dragY : shiftAnim;
 
   return (
     <Animated.View
@@ -168,7 +115,7 @@ function ReorderRow({
         styles.row,
         isDragging && styles.rowActive,
         {
-          transform: [{ translateY }],
+          transform: [{ translateY: isDragging ? dragY : shiftOffset }],
           zIndex: isDragging ? 10 : 1,
         },
       ]}
@@ -183,7 +130,6 @@ function ReorderRow({
 }
 
 export default function ReorderExercisesScreen() {
-  const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { getRoutine, moveExerciseToIndex } = useRoutines();
   const routine = getRoutine(id);
@@ -196,10 +142,16 @@ export default function ReorderExercisesScreen() {
   return (
     <SafeAreaView edges={["top", "bottom"]} style={styles.safeArea}>
       <View style={styles.screen}>
-        <View style={styles.header}>
-          <BackButton onPress={() => router.back()} />
-          <Text style={styles.title}>Reorder</Text>
-        </View>
+        <AppHeader
+          leftAction="back"
+          onBackPress={() =>
+            backOrReplace({
+              pathname: "/routine/[id]",
+              params: { id },
+            })
+          }
+          title="Reorder"
+        />
 
         <View style={styles.list}>
           {exercises.map((exercise, index) => (
@@ -211,6 +163,8 @@ export default function ReorderExercisesScreen() {
               index={index}
               itemCount={exercises.length}
               onDragStart={(idx) => {
+                // Prevent grabbing a second item while one is already active
+                if (draggingIndex !== null) return;
                 setDraggingIndex(idx);
                 setHoverIndex(idx);
               }}
@@ -235,30 +189,7 @@ export default function ReorderExercisesScreen() {
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background },
   screen: { flex: 1, backgroundColor: colors.background },
-  header: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 18,
-    paddingBottom: 22,
-    paddingHorizontal: spacing.xxl,
-    paddingTop: 8,
-  },
-  backButton: {
-    alignItems: "center",
-    height: 30,
-    justifyContent: "center",
-    width: 32,
-  },
-  backText: { color: colors.accent, fontSize: 28, lineHeight: 30 },
-  title: {
-    color: colors.textPrimary,
-    fontSize: 26,
-    fontWeight: "400",
-    letterSpacing: 0,
-  },
-  list: {
-    paddingHorizontal: spacing.xxl,
-  },
+  list: { paddingHorizontal: spacing.xxl, paddingTop: 8 },
   row: {
     alignItems: "center",
     backgroundColor: colors.surface,
@@ -268,6 +199,7 @@ const styles = StyleSheet.create({
     height: 62,
     marginBottom: 4,
     paddingLeft: 20,
+    zIndex: 1,
   },
   rowActive: {
     backgroundColor: colors.surfacePressed,
@@ -282,10 +214,7 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     letterSpacing: 0,
   },
-  handle: {
-    gap: 4,
-    padding: 16,
-  },
+  handle: { gap: 4, padding: 16 },
   handleLine: {
     backgroundColor: colors.accent,
     borderRadius: radius.xs,

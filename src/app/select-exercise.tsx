@@ -1,7 +1,8 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Animated,
   Modal,
   Pressable,
   ScrollView,
@@ -15,21 +16,79 @@ import {
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 
+import { AppHeader } from "@/components/app-header";
+import { useRoutines } from "@/state/routines";
 import { colors } from "@/theme/colors";
+import { radius } from "@/theme/radius";
 import { spacing } from "@/theme/spacing";
+import { backOrReplace } from "@/utils/navigation";
 
-const categories = [
-  "Abs",
-  "Back",
-  "Biceps",
-  "Cardio",
-  "Chest",
-  "Legs",
-  "Shoulders",
-  "Triceps",
-] as const;
+// --- REUSABLE BOTTOM SHEET COMPONENT ---
+function BottomSheet({
+  children,
+  insetsBottom,
+  onClose,
+  visible,
+}: {
+  children: React.ReactNode;
+  insetsBottom: number;
+  onClose: () => void;
+  visible: boolean;
+}) {
+  const [showModal, setShowModal] = useState(visible);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
 
-// MOCK DATA: Replace this with your actual exercise list from state/database
+  useEffect(() => {
+    if (visible) {
+      setShowModal(true);
+      fadeAnim.setValue(0);
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 120,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 120,
+        useNativeDriver: true,
+      }).start(() => {
+        setShowModal(false);
+      });
+    }
+  }, [visible, fadeAnim]);
+
+  if (!showModal) return null;
+
+  return (
+    <Modal
+      animationType="none"
+      onRequestClose={onClose}
+      transparent
+      visible={showModal}
+    >
+      <Animated.View style={[styles.sheetContainer, { opacity: fadeAnim }]}>
+        <View style={styles.scrimOverlay} />
+        <Pressable
+          accessibilityLabel="Close menu"
+          onPress={onClose}
+          style={StyleSheet.absoluteFillObject}
+        />
+        <View
+          style={[
+            styles.sheet,
+            {
+              paddingBottom: 34 + insetsBottom,
+            },
+          ]}
+        >
+          {children}
+        </View>
+      </Animated.View>
+    </Modal>
+  );
+}
+
 const ALL_EXERCISES = [
   { id: "1", name: "Crunch", category: "Abs" },
   { id: "2", name: "Plank", category: "Abs" },
@@ -44,17 +103,32 @@ const ALL_EXERCISES = [
 export default function SelectExerciseScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { activeRoutineId } = useRoutines();
+
+  const [categories, setCategories] = useState([
+    "Abs",
+    "Back",
+    "Biceps",
+    "Cardio",
+    "Chest",
+    "Legs",
+    "Shoulders",
+    "Triceps",
+  ]);
 
   const [exerciseMode, setExerciseMode] = useState<"regular" | "superset">(
     "regular",
   );
-
-  // NEW: Search State
   const [isSearching, setIsSearching] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [createSheetOpen, setCreateSheetOpen] = useState(false);
 
-  // Filter exercises based on search query
+  // Sheet States
+  const [optionsSheetOpen, setOptionsSheetOpen] = useState(false);
+  const [createSheetOpen, setCreateSheetOpen] = useState(false);
+  const [deleteSheetOpen, setDeleteSheetOpen] = useState(false);
+
+  const [newCategoryName, setNewCategoryName] = useState("");
+
   const filteredExercises = useMemo(() => {
     if (!searchQuery.trim()) return ALL_EXERCISES;
     return ALL_EXERCISES.filter((ex) =>
@@ -62,15 +136,25 @@ export default function SelectExerciseScreen() {
     );
   }, [searchQuery]);
 
+  const handleCreateCategory = () => {
+    if (newCategoryName.trim()) {
+      setCategories((prev) => [...prev, newCategoryName.trim()].sort());
+      setNewCategoryName("");
+      setCreateSheetOpen(false);
+    }
+  };
+
+  const handleDeleteCategory = (categoryToDelete: string) => {
+    setCategories((prev) => prev.filter((c) => c !== categoryToDelete));
+  };
+
   return (
     <SafeAreaView edges={["top", "bottom"]} style={styles.safeArea}>
       <View style={styles.screen}>
-        {/* DYNAMIC HEADER: Swaps between Title and Search Bar */}
+        {/* DYNAMIC HEADER */}
         {isSearching ? (
-          <View style={styles.header}>
+          <View style={styles.headerSearch}>
             <Pressable
-              accessibilityLabel="Exit search"
-              accessibilityRole="button"
               onPress={() => {
                 setIsSearching(false);
                 setSearchQuery("");
@@ -83,7 +167,6 @@ export default function SelectExerciseScreen() {
                 color={colors.accent}
               />
             </Pressable>
-
             <TextInput
               autoFocus
               onChangeText={setSearchQuery}
@@ -92,11 +175,8 @@ export default function SelectExerciseScreen() {
               style={styles.searchInput}
               value={searchQuery}
             />
-
             {searchQuery.length > 0 && (
               <Pressable
-                accessibilityLabel="Clear search"
-                accessibilityRole="button"
                 onPress={() => setSearchQuery("")}
                 style={styles.iconButton}
               >
@@ -109,28 +189,22 @@ export default function SelectExerciseScreen() {
             )}
           </View>
         ) : (
-          <View style={styles.header}>
-            <Pressable
-              accessibilityLabel="Close select exercise"
-              accessibilityRole="button"
-              onPress={() => router.back()}
-              style={styles.iconButton}
-            >
-              <MaterialCommunityIcons
-                name="close"
-                size={24}
-                color={colors.accent}
-              />
-            </Pressable>
-
-            <Text style={styles.title} numberOfLines={1}>
-              Select Exercise
-            </Text>
-
-            <View style={styles.headerActions}>
+          <AppHeader
+            leftAction="close"
+            onBackPress={() =>
+              backOrReplace(
+                activeRoutineId
+                  ? {
+                      pathname: "/routine/[id]",
+                      params: { id: activeRoutineId },
+                    }
+                  : "/routines",
+              )
+            }
+            title="Select Exercise"
+            onMorePress={() => setOptionsSheetOpen(true)} // Uses the global standard options menu
+            rightAccessory={
               <Pressable
-                accessibilityLabel="Search exercises"
-                accessibilityRole="button"
                 onPress={() => setIsSearching(true)}
                 style={styles.iconButton}
               >
@@ -140,20 +214,8 @@ export default function SelectExerciseScreen() {
                   color={colors.accent}
                 />
               </Pressable>
-              <Pressable
-                accessibilityLabel="Create exercise"
-                accessibilityRole="button"
-                onPress={() => setCreateSheetOpen(true)}
-                style={styles.iconButton}
-              >
-                <MaterialCommunityIcons
-                  name="plus"
-                  size={24}
-                  color={colors.accent}
-                />
-              </Pressable>
-            </View>
-          </View>
+            }
+          />
         )}
 
         <ScrollView
@@ -162,58 +224,47 @@ export default function SelectExerciseScreen() {
             { paddingBottom: 100 + insets.bottom },
           ]}
           showsVerticalScrollIndicator={false}
-          keyboardDismissMode="on-drag" // Dismisses keyboard nicely when scrolling search results
+          keyboardDismissMode="on-drag"
         >
           <View style={styles.list}>
-            {!isSearching ? (
-              // DEFAULT VIEW: Categories (Chevron removed!)
-              categories.map((category) => (
-                <Pressable
-                  accessibilityRole="button"
-                  key={category}
-                  onPress={() =>
-                    category === "Abs" && router.push("/select-exercise/abs")
-                  }
-                  style={({ pressed }) => [
-                    styles.categoryRow,
-                    pressed && styles.rowPressed,
-                  ]}
-                >
-                  <Text style={styles.categoryText}>{category}</Text>
-                </Pressable>
-              ))
-            ) : // SEARCH VIEW: Filtered global exercises
-            filteredExercises.length > 0 ? (
-              filteredExercises.map((exercise) => (
-                <Pressable
-                  accessibilityRole="button"
-                  key={exercise.id}
-                  onPress={() => {
-                    // TODO: Add logic to select this exercise for your routine
-                    console.log("Selected:", exercise.name);
-                  }}
-                  style={({ pressed }) => [
-                    styles.categoryRow,
-                    pressed && styles.rowPressed,
-                  ]}
-                >
-                  <Text style={styles.categoryText}>{exercise.name}</Text>
-                  <Text style={styles.exerciseCategoryBadge}>
-                    {exercise.category}
-                  </Text>
-                </Pressable>
-              ))
-            ) : (
-              <View style={styles.emptySearch}>
-                <Text style={styles.emptySearchText}>
-                  No exercises found for {searchQuery}
-                </Text>
-              </View>
-            )}
+            {!isSearching
+              ? categories.map((category) => (
+                  <Pressable
+                    key={category}
+                    // 👇 This is the updated dynamic route
+                    onPress={() =>
+                      router.push({
+                        pathname: "/select-exercise/[category]",
+                        params: { category },
+                      })
+                    }
+                    style={({ pressed }) => [
+                      styles.categoryRow,
+                      pressed && styles.rowPressed,
+                    ]}
+                  >
+                    <Text style={styles.categoryText}>{category}</Text>
+                  </Pressable>
+                ))
+              : filteredExercises.map((exercise) => (
+                  <Pressable
+                    key={exercise.id}
+                    style={({ pressed }) => [
+                      styles.categoryRow,
+                      pressed && styles.rowPressed,
+                    ]}
+                  >
+                    <View>
+                      <Text style={styles.categoryText}>{exercise.name}</Text>
+                      <Text style={styles.exerciseCategoryBadge}>
+                        {exercise.category}
+                      </Text>
+                    </View>
+                  </Pressable>
+                ))}
           </View>
         </ScrollView>
 
-        {/* MODERN FLOATING SEGMENTED CONTROL */}
         <View
           style={[
             styles.bottomContainer,
@@ -221,7 +272,6 @@ export default function SelectExerciseScreen() {
           ]}
         >
           <Pressable
-            accessibilityRole="button"
             onPress={() => setExerciseMode("regular")}
             style={[
               styles.toggleBtn,
@@ -237,9 +287,7 @@ export default function SelectExerciseScreen() {
               Regular
             </Text>
           </Pressable>
-
           <Pressable
-            accessibilityRole="button"
             onPress={() => setExerciseMode("superset")}
             style={[
               styles.toggleBtn,
@@ -257,66 +305,136 @@ export default function SelectExerciseScreen() {
           </Pressable>
         </View>
 
-        <Modal
-          animationType="slide"
-          transparent
-          visible={createSheetOpen}
-          onRequestClose={() => setCreateSheetOpen(false)}
+        {/* 1. OPTIONS MENU SHEET */}
+        <BottomSheet
+          insetsBottom={insets.bottom}
+          onClose={() => setOptionsSheetOpen(false)}
+          visible={optionsSheetOpen}
         >
-          <View style={styles.sheetScrim}>
-            <Pressable
-              accessibilityLabel="Close create exercise"
-              onPress={() => setCreateSheetOpen(false)}
-              style={styles.scrimDismiss}
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => {
+              setOptionsSheetOpen(false);
+              setTimeout(() => setCreateSheetOpen(true), 300);
+            }}
+            style={styles.sheetAction}
+          >
+            <MaterialCommunityIcons
+              color={colors.textPrimary}
+              name="folder-plus-outline"
+              size={24}
+              style={styles.sheetIcon}
             />
-            <View style={[styles.sheet, { paddingBottom: 34 + insets.bottom }]}>
-              <Text style={styles.sheetTitle}>Create Exercise</Text>
-              <Text style={styles.sheetDescription}>
-                Add a custom movement to your exercise library.
-              </Text>
-              <Pressable accessibilityRole="button" style={styles.sheetAction}>
-                <MaterialCommunityIcons
-                  color={colors.textPrimary}
-                  name="plus-circle-outline"
-                  size={24}
-                  style={styles.sheetIcon}
-                />
-                <Text style={styles.sheetText}>New Exercise</Text>
-              </Pressable>
-              <Pressable accessibilityRole="button" style={styles.sheetAction}>
-                <MaterialCommunityIcons
-                  color={colors.textPrimary}
-                  name="folder-plus-outline"
-                  size={24}
-                  style={styles.sheetIcon}
-                />
-                <Text style={styles.sheetText}>New Category</Text>
-              </Pressable>
-            </View>
+            <Text style={styles.sheetText}>New Category</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => {
+              setOptionsSheetOpen(false);
+              setTimeout(() => setDeleteSheetOpen(true), 300);
+            }}
+            style={styles.sheetAction}
+          >
+            <MaterialCommunityIcons
+              color="#ffaaa1"
+              name="trash-can-outline"
+              size={24}
+              style={styles.sheetIcon}
+            />
+            <Text style={[styles.sheetText, styles.deleteText]}>
+              Delete Category
+            </Text>
+          </Pressable>
+        </BottomSheet>
+
+        {/* 2. CREATE CATEGORY SHEET */}
+        <BottomSheet
+          insetsBottom={insets.bottom}
+          onClose={() => {
+            setCreateSheetOpen(false);
+            setNewCategoryName("");
+          }}
+          visible={createSheetOpen}
+        >
+          <Text style={styles.sheetTitle}>New Category</Text>
+          <Text style={styles.sheetDescription}>
+            Enter a name to create a new grouping for your exercises.
+          </Text>
+
+          <View style={styles.inputWrap}>
+            <TextInput
+              autoFocus
+              onChangeText={setNewCategoryName}
+              placeholder="e.g. Kettlebell, Olympic..."
+              placeholderTextColor={colors.textSecondary}
+              style={styles.sheetInput}
+              value={newCategoryName}
+            />
           </View>
-        </Modal>
+
+          <Pressable
+            disabled={!newCategoryName.trim()}
+            onPress={handleCreateCategory}
+            style={({ pressed }) => [
+              styles.createButton,
+              !newCategoryName.trim() && styles.buttonDisabled,
+              pressed && styles.rowPressed,
+            ]}
+          >
+            <Text style={styles.createButtonText}>Create Category</Text>
+          </Pressable>
+        </BottomSheet>
+
+        {/* 3. DELETE CATEGORY SHEET */}
+        <BottomSheet
+          insetsBottom={insets.bottom}
+          onClose={() => setDeleteSheetOpen(false)}
+          visible={deleteSheetOpen}
+        >
+          <Text style={styles.sheetTitle}>Delete Category</Text>
+          <Text style={styles.sheetDescription}>
+            Select a category to permanently remove it.
+          </Text>
+
+          <ScrollView
+            style={styles.deleteListScroll}
+            showsVerticalScrollIndicator={false}
+          >
+            {categories.map((cat) => (
+              <Pressable
+                key={cat}
+                onPress={() => handleDeleteCategory(cat)}
+                style={({ pressed }) => [
+                  styles.deleteCategoryRow,
+                  pressed && styles.rowPressed,
+                ]}
+              >
+                <Text style={styles.categoryText}>{cat}</Text>
+                <MaterialCommunityIcons
+                  name="trash-can-outline"
+                  size={22}
+                  color="#ffaaa1"
+                />
+              </Pressable>
+            ))}
+          </ScrollView>
+        </BottomSheet>
       </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  screen: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
+  safeArea: { flex: 1, backgroundColor: colors.background },
+  screen: { flex: 1, backgroundColor: colors.background },
 
-  // --- HEADER STYLES ---
-  header: {
+  // --- HEADER ---
+  headerSearch: {
     alignItems: "center",
     flexDirection: "row",
-    paddingBottom: 16,
-    paddingHorizontal: spacing.xxl,
-    paddingTop: 8,
+    paddingBottom: 15,
+    paddingHorizontal: 16,
+    paddingTop: 15,
     gap: 12,
   },
   iconButton: {
@@ -330,58 +448,29 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 22,
     fontWeight: "600",
-    letterSpacing: 0,
   },
-  headerActions: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 4,
-  },
-  searchInput: {
-    flex: 1,
-    color: colors.textPrimary,
-    fontSize: 18,
-    height: 40,
-    paddingHorizontal: 8,
-  },
+  searchInput: { flex: 1, color: colors.textPrimary, fontSize: 18, height: 40 },
 
-  // --- LIST STYLES ---
-  scrollContent: {
-    paddingTop: 8,
-  },
-  list: {
-    paddingHorizontal: spacing.xxl,
-  },
+  // --- LIST ---
+  scrollContent: { paddingTop: 8 },
+  list: { paddingHorizontal: spacing.xxl },
   categoryRow: {
-    alignItems: "center",
     flexDirection: "row",
+    alignItems: "center",
     justifyContent: "space-between",
     minHeight: 60,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "rgba(255,255,255,0.1)",
   },
-  rowPressed: {
-    opacity: 0.5,
-  },
-  categoryText: {
-    color: colors.textPrimary,
-    fontSize: 20,
-    fontWeight: "500",
-    letterSpacing: 0,
-  },
+  rowPressed: { opacity: 0.5 },
+  categoryText: { color: colors.textPrimary, fontSize: 18, fontWeight: "500" },
   exerciseCategoryBadge: {
     color: colors.textSecondary,
-    fontSize: 13,
-    fontWeight: "400",
-  },
-  emptySearch: {
-    paddingTop: 40,
-    alignItems: "center",
-  },
-  emptySearchText: {
-    color: colors.textSecondary,
-    fontSize: 16,
+    fontSize: 12,
+    marginTop: 2,
   },
 
-  // --- PREMIUM BOTTOM BAR TOGGLE ---
+  // --- TOGGLE ---
   bottomContainer: {
     position: "absolute",
     left: spacing.xxl,
@@ -402,59 +491,77 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderRadius: 12,
   },
-  toggleBtnActive: {
-    backgroundColor: colors.fabBackground,
-  },
-  toggleText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: colors.textSecondary,
-  },
-  toggleTextActive: {
-    color: colors.background,
-  },
-  sheetScrim: {
-    backgroundColor: "rgba(0, 0, 0, 0.36)",
-    flex: 1,
-    justifyContent: "flex-end",
-  },
-  scrimDismiss: {
+  toggleBtnActive: { backgroundColor: colors.fabBackground },
+  toggleText: { fontSize: 15, fontWeight: "600", color: colors.textSecondary },
+  toggleTextActive: { color: colors.background },
+
+  // --- SHEETS ---
+  sheetContainer: { flex: 1, justifyContent: "flex-end" },
+  scrimOverlay: {
     ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0, 0, 0, 0.4)",
   },
   sheet: {
     backgroundColor: "#06100f",
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
-    gap: 10,
-    paddingHorizontal: 18,
-    paddingTop: 20,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingHorizontal: 24,
+    paddingTop: 32,
+    gap: 20,
   },
-  sheetTitle: {
-    color: colors.textPrimary,
-    fontSize: 22,
-    fontWeight: "600",
-    paddingHorizontal: 10,
-  },
+  sheetTitle: { color: colors.textPrimary, fontSize: 22, fontWeight: "600" },
   sheetDescription: {
     color: colors.textSecondary,
     fontSize: 14,
     lineHeight: 20,
-    paddingBottom: 10,
-    paddingHorizontal: 10,
   },
   sheetAction: {
     alignItems: "center",
     flexDirection: "row",
     gap: 16,
-    minHeight: 52,
-    paddingHorizontal: 10,
+    minHeight: 44,
+    paddingBottom: 8,
   },
-  sheetIcon: {
-    width: 48,
+  sheetIcon: { width: 34 },
+  sheetText: { color: colors.textPrimary, fontSize: 17, fontWeight: "500" },
+  deleteText: { color: "#ffaaa1" },
+
+  // Create Sheet specific
+  inputWrap: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    paddingHorizontal: 16,
+    height: 56,
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
   },
-  sheetText: {
-    color: colors.textPrimary,
-    fontSize: 17,
-    fontWeight: "500",
+  sheetInput: { color: colors.textPrimary, fontSize: 16 },
+  createButton: {
+    backgroundColor: colors.fabBackground,
+    height: 52,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 8,
+  },
+  createButtonText: {
+    color: colors.background,
+    fontWeight: "700",
+    fontSize: 16,
+  },
+  buttonDisabled: { opacity: 0.3 },
+
+  // Delete Sheet specific
+  deleteListScroll: {
+    maxHeight: 280,
+  },
+  deleteCategoryRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "rgba(255,255,255,0.05)",
   },
 });

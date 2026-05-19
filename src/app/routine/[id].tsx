@@ -21,6 +21,7 @@ import { useRoutines } from "@/state/routines";
 import { colors } from "@/theme/colors";
 import { radius } from "@/theme/radius";
 import { spacing } from "@/theme/spacing";
+import { backOrReplace } from "@/utils/navigation";
 
 // --- REUSABLE BOTTOM SHEET COMPONENT ---
 function BottomSheet({
@@ -35,42 +36,27 @@ function BottomSheet({
   visible: boolean;
 }) {
   const [showModal, setShowModal] = useState(visible);
-  const translateY = useRef(new Animated.Value(400)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (visible) {
       setShowModal(true);
-      Animated.parallel([
-        Animated.spring(translateY, {
-          toValue: 0,
-          useNativeDriver: true,
-          bounciness: 0,
-          speed: 14,
-        }),
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 200,
-          useNativeDriver: true,
-        }),
-      ]).start();
+      fadeAnim.setValue(0);
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 120,
+        useNativeDriver: true,
+      }).start();
     } else {
-      Animated.parallel([
-        Animated.timing(translateY, {
-          toValue: 400,
-          duration: 250,
-          useNativeDriver: true,
-        }),
-        Animated.timing(fadeAnim, {
-          toValue: 0,
-          duration: 250,
-          useNativeDriver: true,
-        }),
-      ]).start(() => {
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 120,
+        useNativeDriver: true,
+      }).start(() => {
         setShowModal(false);
       });
     }
-  }, [visible, translateY, fadeAnim]);
+  }, [visible, fadeAnim]);
 
   if (!showModal) return null;
 
@@ -81,25 +67,24 @@ function BottomSheet({
       transparent
       visible={showModal}
     >
-      <View style={styles.sheetContainer}>
-        <Animated.View style={[styles.scrimOverlay, { opacity: fadeAnim }]} />
+      <Animated.View style={[styles.sheetContainer, { opacity: fadeAnim }]}>
+        <View style={styles.scrimOverlay} />
         <Pressable
           accessibilityLabel="Close menu"
           onPress={onClose}
           style={StyleSheet.absoluteFillObject}
         />
-        <Animated.View
+        <View
           style={[
             styles.sheet,
             {
               paddingBottom: 34 + insetsBottom,
-              transform: [{ translateY }],
             },
           ]}
         >
           {children}
-        </Animated.View>
-      </View>
+        </View>
+      </Animated.View>
     </Modal>
   );
 }
@@ -121,7 +106,7 @@ export default function RoutineDetailScreen() {
     null,
   );
   const [routineMenuOpen, setRoutineMenuOpen] = useState(false);
-  const [targetMenuOpen, setTargetMenuOpen] = useState(false); // NEW STATE FOR TARGET DROPDOWN
+  const [targetMenuOpen, setTargetMenuOpen] = useState(false);
 
   const routine = getRoutine(id);
   const selectedExercise =
@@ -147,7 +132,7 @@ export default function RoutineDetailScreen() {
 
   function deleteAndLeave() {
     deleteRoutine(routineId);
-    router.back();
+    backOrReplace("/routines");
   }
 
   return (
@@ -155,7 +140,7 @@ export default function RoutineDetailScreen() {
       <View style={styles.screen}>
         <AppHeader
           leftAction="back"
-          onBackPress={() => router.back()}
+          onBackPress={() => backOrReplace("/routines")}
           onMorePress={() => setRoutineMenuOpen(true)}
           rightAccessory={
             <Pressable accessibilityRole="button" style={styles.startPill}>
@@ -184,7 +169,6 @@ export default function RoutineDetailScreen() {
               />
             </View>
 
-            {/* UPDATED TARGETS INPUT */}
             <Pressable
               accessibilityRole="button"
               onPress={() => setTargetMenuOpen(true)}
@@ -257,7 +241,7 @@ export default function RoutineDetailScreen() {
           <Text style={styles.addExerciseText}>Add Exercise</Text>
         </Pressable>
 
-        {/* --- NEW TARGET PROGRESSION MENU --- */}
+        {/* --- TARGET PROGRESSION MENU --- */}
         <BottomSheet
           insetsBottom={insets.bottom}
           onClose={() => setTargetMenuOpen(false)}
@@ -314,7 +298,7 @@ export default function RoutineDetailScreen() {
           </Pressable>
         </BottomSheet>
 
-        {/* Global Routine Menu Modal */}
+        {/* --- GLOBAL ROUTINE MENU MODAL --- */}
         <BottomSheet
           insetsBottom={insets.bottom}
           onClose={() => setRoutineMenuOpen(false)}
@@ -324,10 +308,7 @@ export default function RoutineDetailScreen() {
             accessibilityRole="button"
             onPress={() => {
               setRoutineMenuOpen(false);
-              router.push({
-                pathname: "/routine/[id]/reorder",
-                params: { id: routineId },
-              });
+              // Since the Name/Notes fields are already editable inline, Edit just closes the sheet
             }}
             style={styles.sheetAction}
           >
@@ -343,6 +324,11 @@ export default function RoutineDetailScreen() {
             accessibilityRole="button"
             onPress={() => {
               setRoutineMenuOpen(false);
+              // FIXED: Added the router.push here!
+              router.push({
+                pathname: "/routine/[id]/reorder",
+                params: { id: routineId },
+              });
             }}
             style={styles.sheetAction}
           >
@@ -369,7 +355,7 @@ export default function RoutineDetailScreen() {
           </Pressable>
         </BottomSheet>
 
-        {/* Exercise Options Modal */}
+        {/* --- EXERCISE OPTIONS MODAL --- */}
         <BottomSheet
           insetsBottom={insets.bottom}
           onClose={() => setSelectedExerciseId(null)}

@@ -18,7 +18,14 @@ export default function TabsLayout() {
 
   return (
     <Tabs
-      screenOptions={{ headerShown: false }}
+      screenOptions={{
+        animation: 'none',
+        headerShown: false,
+        sceneStyle: { backgroundColor: colors.background },
+      }}
+      screenLayout={({ children }) => (
+        <View style={styles.sceneContainer}>{children}</View>
+      )}
       tabBar={({ state, navigation }) => (
         <View style={[styles.tabBar, { height: 72 + insets.bottom, paddingBottom: insets.bottom }]}>
           {tabItems.map((item) => {
@@ -55,6 +62,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-around',
     paddingHorizontal: spacing.md,
+  },
+  sceneContainer: {
+    flex: 1,
+    backgroundColor: colors.background,
   },
   tab: {
     alignItems: 'center',

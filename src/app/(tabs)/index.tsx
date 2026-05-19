@@ -181,7 +181,7 @@ const styles = StyleSheet.create({
     ...typography.dateMonth,
   },
   timelineLine: {
-    backgroundColor: "transparent",
+    backgroundColor: colors.background,
     flex: 1,
     marginTop: spacing.md,
     minHeight: 48,
@@ -203,7 +203,6 @@ const styles = StyleSheet.create({
   },
   cardPressed: {
     backgroundColor: colors.surfacePressed,
-    transform: [{ scale: 0.99 }],
   },
   cardHeader: {
     alignItems: "flex-start",
@@ -253,7 +252,6 @@ const styles = StyleSheet.create({
   },
   addButtonPressed: {
     opacity: 0.86,
-    transform: [{ scale: 0.97 }],
   },
   plusIcon: {
     alignItems: "center",

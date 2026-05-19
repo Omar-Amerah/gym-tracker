@@ -4,22 +4,31 @@
     "slug": "gym-tracker",
     "version": "1.0.0",
     "orientation": "portrait",
+    "backgroundColor": "#000000",
     "icon": "./assets/images/icon.png",
     "scheme": "gymtracker",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "dark",
     "ios": {
       "icon": "./assets/expo.icon"
     },
     "android": {
+      "backgroundColor": "#000000",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
+      "userInterfaceStyle": "dark",
       "predictiveBackGestureEnabled": false
     },
+    "androidStatusBar": {
+      "backgroundColor": "#000000",
+      "barStyle": "light-content",
+      "translucent": false
+    },
     "web": {
+      "backgroundColor": "#000000",
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
@@ -28,7 +37,7 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
+          "backgroundColor": "#000000",
           "android": {
             "image": "./assets/images/splash-icon.png",
             "imageWidth": 76
