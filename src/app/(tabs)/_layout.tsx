@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { TabIcon, type TabName } from "@/components/tab-icons";
+import { animations } from "@/theme/animations";
 import { colors } from "@/theme/colors";
 import { spacing } from "@/theme/spacing";
 import { typography } from "@/theme/typography";
@@ -19,9 +20,13 @@ export default function TabsLayout() {
   return (
     <Tabs
       screenOptions={{
-        animation: "none",
+        animation: "fade",
         headerShown: false,
         sceneStyle: { backgroundColor: colors.background },
+        transitionSpec: {
+          animation: "timing",
+          config: { duration: animations.tabDuration },
+        },
       }}
       screenLayout={({ children }) => (
         <View style={styles.sceneContainer}>{children}</View>
@@ -45,7 +50,10 @@ export default function TabsLayout() {
                 accessibilityState={{ selected }}
                 key={item.routeName}
                 onPress={() => navigation.navigate(item.routeName)}
-                style={styles.tab}
+                style={({ pressed }) => [
+                  styles.tab,
+                  pressed && styles.tabPressed,
+                ]}
               >
                 <TabIcon name={item.label} selected={selected} />
                 <Text
@@ -86,6 +94,9 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     height: 55,
     justifyContent: "center",
+  },
+  tabPressed: {
+    opacity: animations.pressOpacity,
   },
   tabText: {
     color: colors.textSecondary,

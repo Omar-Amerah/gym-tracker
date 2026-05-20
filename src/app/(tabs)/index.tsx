@@ -10,6 +10,7 @@ import {
   listCompletedWorkouts,
   type LoggedWorkout,
 } from "@/db/workoutsRepository";
+import { animations } from "@/theme/animations";
 import { colors } from "@/theme/colors";
 import { radius } from "@/theme/radius";
 import { spacing } from "@/theme/spacing";
@@ -317,7 +318,7 @@ const styles = StyleSheet.create({
     zIndex: 20,
   },
   addButtonPressed: {
-    opacity: 0.86,
+    opacity: animations.pressOpacity,
   },
   disabledAction: {
     opacity: 0.55,
@@ -341,7 +342,7 @@ const styles = StyleSheet.create({
     zIndex: 20,
   },
   resumePillPressed: {
-    opacity: 0.88,
+    opacity: animations.pressOpacity,
   },
   resumeLabel: {
     color: colors.background,

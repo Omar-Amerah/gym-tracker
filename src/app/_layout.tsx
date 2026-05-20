@@ -6,6 +6,7 @@ import { StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { RoutinesProvider } from '@/state/routines';
+import { animations } from '@/theme/animations';
 import { colors } from '@/theme/colors';
 
 const navigationTheme = {
@@ -31,7 +32,7 @@ export default function RootLayout() {
             <Stack
               screenOptions={{
                 animation: 'fade',
-                animationDuration: 150,
+                animationDuration: animations.pageDuration,
                 contentStyle: { backgroundColor: colors.background },
                 headerShown: false,
                 navigationBarColor: colors.background,

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
   PanResponder,
@@ -88,8 +88,8 @@ function ReorderRow({
         },
         onPanResponderRelease: () => {
           targetIndexRef.current = null;
-          dragY.setValue(0);
           gestureStateRef.current.onRelease();
+          requestAnimationFrame(() => dragY.setValue(0));
         },
         onPanResponderTerminate: () => {
           targetIndexRef.current = null;
@@ -128,19 +128,37 @@ function ReorderRow({
 export default function ReorderRoutinesScreen() {
   const { moveRoutineToIndex, routines } = useRoutines();
 
+  const [displayRoutines, setDisplayRoutines] = useState<Routine[]>(routines);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragStartIndex, setDragStartIndex] = useState<number | null>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
+  useEffect(() => {
+    if (draggingId === null) {
+      setDisplayRoutines(routines);
+    }
+  }, [draggingId, routines]);
+
   const visibleRoutines = useMemo(() => {
-    if (!draggingId || hoverIndex === null) return routines;
-    const next = [...routines];
+    if (!draggingId || hoverIndex === null) return displayRoutines;
+    const next = [...displayRoutines];
     const from = next.findIndex((routine) => routine.id === draggingId);
-    if (from < 0) return routines;
+    if (from < 0) return displayRoutines;
     const [routine] = next.splice(from, 1);
     next.splice(hoverIndex, 0, routine);
     return next;
-  }, [draggingId, hoverIndex, routines]);
+  }, [displayRoutines, draggingId, hoverIndex]);
+
+  function moveDisplayRoutine(fromId: string, toIdx: number) {
+    const nextRoutines = [...displayRoutines];
+    const fromIdx = nextRoutines.findIndex((routine) => routine.id === fromId);
+    if (fromIdx < 0) return displayRoutines;
+
+    const [movedRoutine] = nextRoutines.splice(fromIdx, 1);
+    const boundedIndex = Math.max(0, Math.min(toIdx, nextRoutines.length));
+    nextRoutines.splice(boundedIndex, 0, movedRoutine);
+    return nextRoutines;
+  }
 
   return (
     <SafeAreaView edges={["top", "bottom"]} style={styles.safeArea}>
@@ -156,7 +174,7 @@ export default function ReorderRoutinesScreen() {
             <ReorderRow
               active={routine.id === draggingId}
               currentIndex={index}
-              itemCount={routines.length}
+              itemCount={displayRoutines.length}
               key={routine.id}
               onDragStart={() => {
                 setDraggingId(routine.id);
@@ -167,10 +185,19 @@ export default function ReorderRoutinesScreen() {
                 setHoverIndex(nextIndex);
               }}
               onRelease={() => {
-                if (draggingId !== null && hoverIndex !== null) {
+                if (
+                  draggingId !== null &&
+                  hoverIndex !== null &&
+                  dragStartIndex !== null &&
+                  dragStartIndex !== hoverIndex
+                ) {
+                  const nextRoutines = moveDisplayRoutine(
+                    draggingId,
+                    hoverIndex,
+                  );
+                  setDisplayRoutines(nextRoutines);
                   moveRoutineToIndex(draggingId, hoverIndex);
                 }
-                // Clears synchronously, preventing any lockouts
                 setDraggingId(null);
                 setDragStartIndex(null);
                 setHoverIndex(null);

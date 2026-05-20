@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { animations } from "@/theme/animations";
 import { colors } from "@/theme/colors";
 import { radius } from "@/theme/radius";
 import { spacing } from "@/theme/spacing";
@@ -53,7 +54,7 @@ export function BottomSheet({
       fadeAnim.setValue(0);
       Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 120,
+        duration: animations.sheetDuration,
         useNativeDriver: true,
       }).start();
       return () => {
@@ -64,7 +65,7 @@ export function BottomSheet({
     fadeAnim.stopAnimation();
     Animated.timing(fadeAnim, {
       toValue: 0,
-      duration: 120,
+      duration: animations.sheetDuration,
       useNativeDriver: true,
     }).start(() => {
       if (cancelled) return;

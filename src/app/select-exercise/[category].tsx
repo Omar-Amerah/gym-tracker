@@ -25,7 +25,6 @@ import {
 import { useRoutines } from "@/state/routines";
 import { colors } from "@/theme/colors";
 import { spacing } from "@/theme/spacing";
-import { backOrReplace } from "@/utils/navigation";
 
 export default function CategoryExercisesScreen() {
   const router = useRouter();
@@ -93,10 +92,7 @@ export default function CategoryExercisesScreen() {
       exercise.id,
       exercise.exerciseType,
     );
-    router.replace({
-      pathname: "/routine/[id]",
-      params: { id: activeRoutineId },
-    });
+    router.dismiss(2);
   }
 
   return (
@@ -141,19 +137,7 @@ export default function CategoryExercisesScreen() {
         ) : (
           <AppHeader
             leftAction="back"
-            onBackPress={() =>
-              backOrReplace(
-                isActiveWorkoutReplacement || isActiveWorkoutAdd
-                  ? {
-                      pathname: "/select-exercise",
-                      params: {
-                        activeWorkoutRoutineId,
-                        mode,
-                      },
-                    }
-                  : "/select-exercise",
-              )
-            }
+            onBackPress={() => router.back()}
             title={category || "Exercises"}
             rightAccessory={
               <View style={styles.headerRightGroup}>

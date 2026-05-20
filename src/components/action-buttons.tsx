@@ -9,6 +9,7 @@ import {
 } from "react-native";
 
 import { colors } from "@/theme/colors";
+import { animations } from "@/theme/animations";
 import { radius } from "@/theme/radius";
 
 type ActionButtonProps = {
@@ -125,7 +126,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0,
   },
   pressed: {
-    opacity: 0.84,
+    opacity: animations.pressOpacity,
   },
   disabled: {
     opacity: 0.55,

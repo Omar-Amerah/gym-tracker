@@ -128,10 +128,7 @@ export default function SelectExerciseScreen() {
       exercise.id,
       exercise.exerciseType,
     );
-    router.replace({
-      pathname: "/routine/[id]",
-      params: { id: activeRoutineId },
-    });
+    router.dismiss(1);
   };
 
   return (
@@ -180,14 +177,9 @@ export default function SelectExerciseScreen() {
             onBackPress={() =>
               isActiveWorkoutReplacement || isActiveWorkoutAdd
                 ? router.dismiss(1)
-                : backOrReplace(
-                    activeRoutineId
-                      ? {
-                          pathname: "/routine/[id]",
-                          params: { id: activeRoutineId },
-                        }
-                      : "/routines",
-                  )
+                : activeRoutineId
+                  ? router.dismiss(1)
+                  : backOrReplace("/routines")
             }
             title="Select Exercise"
             onMorePress={() => setOptionsSheetOpen(true)} // Uses the global standard options menu

@@ -15,6 +15,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { AppHeader } from "@/components/app-header";
 import { BottomSheet } from "@/components/bottom-sheet";
 import { useRoutines } from "@/state/routines";
+import { animations } from "@/theme/animations";
 import { colors } from "@/theme/colors";
 import { radius } from "@/theme/radius";
 import { spacing } from "@/theme/spacing";
@@ -308,7 +309,7 @@ const styles = StyleSheet.create({
     zIndex: 20,
   },
   addButtonPressed: {
-    opacity: 0.86,
+    opacity: animations.pressOpacity,
   },
   disabledAction: {
     opacity: 0.55,
