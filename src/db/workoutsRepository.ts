@@ -4,6 +4,7 @@ import { createId, nowIso } from "@/db/schema";
 export type WorkoutStatus = "draft" | "completed";
 
 export type WorkoutSetInput = {
+  distance: number | null;
   id: string;
   kg: number | null;
   minutes: number | null;
@@ -15,6 +16,7 @@ export type WorkoutSetInput = {
 
 export type WorkoutExerciseInput = {
   exerciseId?: string | null;
+  exerciseType?: string | null;
   id: string;
   isStarred: boolean;
   name: string;
@@ -67,6 +69,7 @@ export type LoggedWorkout = {
 };
 
 export type PreviousExerciseSet = {
+  distance: number | null;
   kg: number | null;
   minutes: number | null;
   notes: string | null;
@@ -100,6 +103,7 @@ type WorkoutRow = {
 
 type SavedExerciseRow = {
   exerciseId: string | null;
+  exerciseType: string | null;
   id: string;
   isStarred: number | null;
   name: string;
@@ -115,6 +119,7 @@ type ExerciseSummaryRow = {
 };
 
 type SavedSetRow = {
+  distance: number | null;
   id: string;
   kg: number | null;
   minutes: number | null;
@@ -160,15 +165,16 @@ export async function saveWorkout(input: WorkoutInput) {
     );
 
     for (const [exerciseIndex, exercise] of input.exercises.entries()) {
-      const workoutExerciseId = createId("workout-exercise");
+      const workoutExerciseId = exercise.id || createId("workout-exercise");
       await db.runAsync(
         `INSERT INTO workout_exercises
-          (id, workoutId, routineExerciseId, exerciseId, name, notes, sortOrder, isStarred, createdAt, updatedAt)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          (id, workoutId, routineExerciseId, exerciseId, exerciseType, name, notes, sortOrder, isStarred, createdAt, updatedAt)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         workoutExerciseId,
         workoutId,
         exercise.routineExerciseId ?? null,
         exercise.exerciseId ?? null,
+        exercise.exerciseType ?? null,
         exercise.name,
         exercise.notes,
         exerciseIndex,
@@ -179,13 +185,14 @@ export async function saveWorkout(input: WorkoutInput) {
 
       for (const [setIndex, set] of exercise.sets.entries()) {
         await db.runAsync(
-          `INSERT INTO workout_sets
-            (id, workoutExerciseId, setType, setOrder, kg, reps, minutes, seconds, notes, createdAt, updatedAt)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          createId("workout-set"),
+        `INSERT INTO workout_sets
+            (id, workoutExerciseId, setType, setOrder, distance, kg, reps, minutes, seconds, notes, createdAt, updatedAt)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          set.id || createId("workout-set"),
           workoutExerciseId,
           set.type,
           setIndex,
+          set.distance,
           set.kg,
           set.reps,
           set.minutes,
@@ -237,12 +244,13 @@ export async function updateWorkout(id: string, input: WorkoutInput) {
       const workoutExerciseId = exercise.id || createId("workout-exercise");
       await db.runAsync(
         `INSERT INTO workout_exercises
-          (id, workoutId, routineExerciseId, exerciseId, name, notes, sortOrder, isStarred, createdAt, updatedAt)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          (id, workoutId, routineExerciseId, exerciseId, exerciseType, name, notes, sortOrder, isStarred, createdAt, updatedAt)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         workoutExerciseId,
         id,
         exercise.routineExerciseId ?? null,
         exercise.exerciseId ?? null,
+        exercise.exerciseType ?? null,
         exercise.name,
         exercise.notes,
         exerciseIndex,
@@ -253,13 +261,14 @@ export async function updateWorkout(id: string, input: WorkoutInput) {
 
       for (const [setIndex, set] of exercise.sets.entries()) {
         await db.runAsync(
-          `INSERT INTO workout_sets
-            (id, workoutExerciseId, setType, setOrder, kg, reps, minutes, seconds, notes, createdAt, updatedAt)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO workout_sets
+            (id, workoutExerciseId, setType, setOrder, distance, kg, reps, minutes, seconds, notes, createdAt, updatedAt)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           set.id || createId("workout-set"),
           workoutExerciseId,
           set.type,
           setIndex,
+          set.distance,
           set.kg,
           set.reps,
           set.minutes,
@@ -300,14 +309,17 @@ export async function getSavedWorkout(id: string): Promise<SavedWorkout | null> 
   if (!workout) return null;
 
   const exercises = await db.getAllAsync<SavedExerciseRow>(
-    `SELECT id, routineExerciseId, exerciseId, name, notes, sortOrder, isStarred
-     FROM workout_exercises
-     WHERE workoutId = ?
-     ORDER BY sortOrder ASC`,
+    `SELECT we.id, we.routineExerciseId, we.exerciseId,
+            COALESCE(we.exerciseType, e.exerciseType, 'Strength: Weight, Reps') AS exerciseType,
+            we.name, we.notes, we.sortOrder, we.isStarred
+     FROM workout_exercises we
+     LEFT JOIN exercises e ON e.id = we.exerciseId
+     WHERE we.workoutId = ?
+      ORDER BY we.sortOrder ASC`,
     id,
   );
   const sets = await db.getAllAsync<SavedSetRow>(
-    `SELECT id, workoutExerciseId, setType, setOrder, kg, reps, minutes, seconds, notes
+    `SELECT id, workoutExerciseId, setType, setOrder, distance, kg, reps, minutes, seconds, notes
      FROM workout_sets
      WHERE workoutExerciseId IN (
        SELECT id FROM workout_exercises WHERE workoutId = ?
@@ -331,6 +343,7 @@ export async function getSavedWorkout(id: string): Promise<SavedWorkout | null> 
       id: exercise.id,
       routineExerciseId: exercise.routineExerciseId,
       exerciseId: exercise.exerciseId,
+      exerciseType: exercise.exerciseType,
       name: exercise.name,
       notes: exercise.notes ?? "",
       sortOrder: exercise.sortOrder,
@@ -341,6 +354,7 @@ export async function getSavedWorkout(id: string): Promise<SavedWorkout | null> 
           id: set.id,
           type: set.setType,
           sortOrder: set.setOrder,
+          distance: set.distance,
           kg: set.kg,
           reps: set.reps,
           minutes: set.minutes,
@@ -450,6 +464,7 @@ export async function getLastExercisePerformance({
     `SELECT
        setType,
        setOrder,
+       distance,
        kg,
        reps,
        minutes,

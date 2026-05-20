@@ -88,6 +88,7 @@ async function createSchema(db: SQLite.SQLiteDatabase) {
       workoutId TEXT NOT NULL,
       routineExerciseId TEXT,
       exerciseId TEXT,
+      exerciseType TEXT,
       name TEXT NOT NULL,
       notes TEXT,
       sortOrder INTEGER NOT NULL,
@@ -102,6 +103,7 @@ async function createSchema(db: SQLite.SQLiteDatabase) {
       workoutExerciseId TEXT NOT NULL,
       setType TEXT NOT NULL CHECK (setType IN ('warmup', 'normal', 'drop')),
       setOrder INTEGER NOT NULL,
+      distance REAL,
       kg REAL,
       reps INTEGER,
       minutes INTEGER,
@@ -131,6 +133,28 @@ async function migrateSchema(db: SQLite.SQLiteDatabase) {
     await db.execAsync(
       "ALTER TABLE workouts ADD COLUMN status TEXT NOT NULL DEFAULT 'completed';",
     );
+  }
+
+  const workoutSetColumns = await db.getAllAsync<{ name: string }>(
+    "PRAGMA table_info(workout_sets)",
+  );
+  const hasDistance = workoutSetColumns.some(
+    (column) => column.name === "distance",
+  );
+
+  if (!hasDistance) {
+    await db.execAsync("ALTER TABLE workout_sets ADD COLUMN distance REAL;");
+  }
+
+  const workoutExerciseColumns = await db.getAllAsync<{ name: string }>(
+    "PRAGMA table_info(workout_exercises)",
+  );
+  const hasExerciseType = workoutExerciseColumns.some(
+    (column) => column.name === "exerciseType",
+  );
+
+  if (!hasExerciseType) {
+    await db.execAsync("ALTER TABLE workout_exercises ADD COLUMN exerciseType TEXT;");
   }
 }
 

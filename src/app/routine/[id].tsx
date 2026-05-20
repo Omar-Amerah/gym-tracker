@@ -1,7 +1,9 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useFocusEffect } from "@react-navigation/native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
+  Alert,
   Animated,
   Modal,
   Pressable,
@@ -106,6 +108,7 @@ export default function RoutineDetailScreen() {
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(
     null,
   );
+  const [isStartingWorkout, setIsStartingWorkout] = useState(false);
   const [routineMenuOpen, setRoutineMenuOpen] = useState(false);
   const [targetMenuOpen, setTargetMenuOpen] = useState(false);
 
@@ -113,6 +116,12 @@ export default function RoutineDetailScreen() {
   const selectedExercise =
     routine?.exercises.find((exercise) => exercise.id === selectedExerciseId) ??
     null;
+
+  useFocusEffect(
+    useCallback(() => {
+      setIsStartingWorkout(false);
+    }, []),
+  );
 
   if (!routine) {
     return (
@@ -127,15 +136,59 @@ export default function RoutineDetailScreen() {
   }
 
   const routineId = routine.id;
+  const routineName = routine.name;
 
   function openAddExercise() {
     setActiveRoutineId(routineId);
     router.push("/select-exercise");
   }
 
+  function startWorkout() {
+    if (isStartingWorkout) return;
+    setIsStartingWorkout(true);
+    router.push({
+      pathname: "/active-workout/[routineId]",
+      params: { routineId },
+    });
+  }
+
   function deleteAndLeave() {
-    deleteRoutine(routineId);
-    backOrReplace("/routines");
+    setRoutineMenuOpen(false);
+    Alert.alert(
+      "Delete routine?",
+      `This will permanently delete ${routineName}.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            deleteRoutine(routineId);
+            backOrReplace("/routines");
+          },
+        },
+      ],
+    );
+  }
+
+  function confirmRemoveExercise() {
+    if (!selectedExercise) return;
+
+    const exerciseId = selectedExercise.id;
+    const exerciseName = selectedExercise.name;
+    setSelectedExerciseId(null);
+    Alert.alert(
+      "Remove exercise?",
+      `This will remove ${exerciseName} from this routine.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: () => removeExercise(routineId, exerciseId),
+        },
+      ],
+    );
   }
 
   return (
@@ -148,14 +201,11 @@ export default function RoutineDetailScreen() {
           rightAccessory={
             <Pressable
               accessibilityRole="button"
-              onPress={() =>
-                router.push({
-                  pathname: "/active-workout/[routineId]",
-                  params: { routineId },
-                })
-              }
+              disabled={isStartingWorkout}
+              onPress={startWorkout}
               style={({ pressed }) => [
                 styles.startPill,
+                isStartingWorkout && styles.disabledAction,
                 pressed && styles.buttonPressed,
               ]}
             >
@@ -488,10 +538,7 @@ export default function RoutineDetailScreen() {
 
               <Pressable
                 accessibilityRole="button"
-                onPress={() => {
-                  removeExercise(routine.id, selectedExercise.id);
-                  setSelectedExerciseId(null);
-                }}
+                onPress={confirmRemoveExercise}
                 style={styles.sheetAction}
               >
                 <MaterialCommunityIcons
@@ -669,6 +716,7 @@ const styles = StyleSheet.create({
     width: 20,
   },
   buttonPressed: { opacity: 0.84 },
+  disabledAction: { opacity: 0.55 },
 
   // --- BOTTOM SHEET MODAL STYLES ---
   sheetContainer: {

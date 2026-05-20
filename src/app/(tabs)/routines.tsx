@@ -1,7 +1,9 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useFocusEffect } from "@react-navigation/native";
 import { useRouter } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
+  Alert,
   Animated,
   Modal,
   Pressable,
@@ -101,6 +103,7 @@ export default function RoutinesScreen() {
     setActiveRoutineId,
   } = useRoutines();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [isCreatingRoutine, setIsCreatingRoutine] = useState(false);
   const [selectedRoutineId, setSelectedRoutineId] = useState<string | null>(
     null,
   );
@@ -114,8 +117,31 @@ export default function RoutinesScreen() {
   }
 
   function createAndOpenRoutine() {
+    if (isCreatingRoutine) return;
+    setIsCreatingRoutine(true);
     const id = createRoutine();
     openRoutine(id);
+  }
+
+  useFocusEffect(
+    useCallback(() => {
+      setIsCreatingRoutine(false);
+    }, []),
+  );
+
+  function confirmDeleteRoutine(routineId: string, routineName: string) {
+    Alert.alert(
+      "Delete routine?",
+      `This will permanently delete ${routineName}.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => deleteRoutine(routineId),
+        },
+      ],
+    );
   }
 
   return (
@@ -167,9 +193,11 @@ export default function RoutinesScreen() {
         <Pressable
           accessibilityLabel="Create routine"
           accessibilityRole="button"
+          disabled={isCreatingRoutine}
           onPress={createAndOpenRoutine}
           style={({ pressed }) => [
             styles.fab,
+            isCreatingRoutine && styles.disabledAction,
             pressed && styles.addButtonPressed,
           ]}
         >
@@ -220,7 +248,9 @@ export default function RoutinesScreen() {
           <Pressable
             accessibilityRole="button"
             onPress={() => {
-              if (routines[0]) deleteRoutine(routines[0].id);
+              if (routines[0]) {
+                confirmDeleteRoutine(routines[0].id, routines[0].name);
+              }
               setMenuOpen(false);
             }}
             style={styles.sheetAction}
@@ -276,7 +306,9 @@ export default function RoutinesScreen() {
           <Pressable
             accessibilityRole="button"
             onPress={() => {
-              if (selectedRoutineId) deleteRoutine(selectedRoutineId);
+              if (selectedRoutineId && selectedRoutine) {
+                confirmDeleteRoutine(selectedRoutineId, selectedRoutine.name);
+              }
               setSelectedRoutineId(null);
             }}
             style={styles.sheetAction}
@@ -389,6 +421,9 @@ const styles = StyleSheet.create({
   },
   addButtonPressed: {
     opacity: 0.86,
+  },
+  disabledAction: {
+    opacity: 0.55,
   },
   plusIcon: {
     alignItems: "center",

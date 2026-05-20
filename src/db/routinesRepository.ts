@@ -11,6 +11,7 @@ type RoutineRow = {
 };
 
 type RoutineExerciseRow = {
+  exerciseType: string | null;
   id: string;
   routineId: string;
   exerciseId: string | null;
@@ -27,9 +28,11 @@ export async function listRoutines(): Promise<Routine[]> {
     "SELECT id, name, targetType, notes, sortOrder FROM routines ORDER BY sortOrder ASC, createdAt ASC",
   );
   const exercises = await db.getAllAsync<RoutineExerciseRow>(
-    `SELECT id, routineId, exerciseId, name, notes, warmUpSets, workingSets, sortOrder
-     FROM routine_exercises
-     ORDER BY sortOrder ASC, createdAt ASC`,
+    `SELECT re.id, re.routineId, re.exerciseId, re.name, re.notes, re.warmUpSets,
+            re.workingSets, re.sortOrder, e.exerciseType
+     FROM routine_exercises re
+     LEFT JOIN exercises e ON e.id = re.exerciseId
+     ORDER BY re.sortOrder ASC, re.createdAt ASC`,
   );
 
   return routines.map((routine) => ({
@@ -228,6 +231,7 @@ function mapRoutineExercise(row: RoutineExerciseRow): RoutineExercise {
   return {
     id: row.id,
     exerciseId: row.exerciseId,
+    exerciseType: row.exerciseType,
     name: row.name,
     notes: row.notes ?? "",
     warmUpSets: row.warmUpSets,

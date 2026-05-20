@@ -44,17 +44,20 @@ import { spacing } from "@/theme/spacing";
 import { backOrReplace } from "@/utils/navigation";
 
 type ActiveWorkoutSet = {
+  distance: string;
   id: string;
   type: "warmup" | "normal" | "drop";
   kg: string;
   reps: string;
   minutes?: string;
   seconds?: string;
+  time: string;
   notes: string;
 };
 
 type ActiveWorkoutExercise = {
   exerciseId?: string | null;
+  exerciseType: string;
   id: string;
   routineExerciseId: string;
   name: string;
@@ -90,8 +93,23 @@ type SelectedSet = {
 
 type SetField = keyof Pick<
   ActiveWorkoutSet,
-  "kg" | "reps" | "minutes" | "seconds" | "notes"
+  "distance" | "kg" | "reps" | "minutes" | "seconds" | "notes"
 >;
+
+type SetMetricField =
+  | "distance"
+  | "kg"
+  | "reps"
+  | "minutes"
+  | "seconds"
+  | "time";
+
+type SetFieldPlan = {
+  field: SetMetricField;
+  keyboardType: "default" | "decimal-pad" | "number-pad";
+  label: string;
+  width?: number;
+};
 
 const ITEM_HEIGHT = 66;
 const TIME_OPTION_HEIGHT = 42;
@@ -160,6 +178,127 @@ function parseOptionalInteger(value: string | undefined) {
 
   const parsed = Number.parseInt(trimmed, 10);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normaliseExerciseType(exerciseType?: string | null) {
+  return exerciseType?.trim() || "Strength: Weight, Reps";
+}
+
+function getSetFieldPlan(exerciseType?: string | null): SetFieldPlan[] {
+  switch (normaliseExerciseType(exerciseType)) {
+    case "Strength: Weight, Time":
+    case "Bodyweight: Weight, Time":
+      return [
+        { field: "kg", label: "Kg", keyboardType: "decimal-pad" },
+        { field: "seconds", label: "Sec", keyboardType: "number-pad" },
+      ];
+    case "Bodyweight: Reps":
+    case "Reps Only":
+      return [{ field: "reps", label: "Reps", keyboardType: "number-pad" }];
+    case "Bodyweight: Time":
+    case "Cardio: Time":
+    case "Time Only":
+      return [
+        { field: "minutes", label: "Min", keyboardType: "number-pad" },
+        { field: "seconds", label: "Sec", keyboardType: "number-pad" },
+      ];
+    case "Cardio: Distance, Time":
+      return [
+        {
+          field: "distance",
+          label: "Distance",
+          keyboardType: "decimal-pad",
+          width: 74,
+        },
+        { field: "time", label: "Time", keyboardType: "default", width: 68 },
+      ];
+    case "Strength: Weight, Reps":
+    case "Bodyweight: Weight, Reps":
+    default:
+      return [
+        { field: "kg", label: "Kg", keyboardType: "decimal-pad" },
+        { field: "reps", label: "Reps", keyboardType: "number-pad" },
+      ];
+  }
+}
+
+function formatTimeValue(minutes?: string, seconds?: string) {
+  const trimmedMinutes = minutes?.trim() ?? "";
+  const trimmedSeconds = seconds?.trim() ?? "";
+  if (!trimmedMinutes && !trimmedSeconds) return "";
+  if (!trimmedSeconds) return trimmedMinutes;
+  return `${trimmedMinutes || "0"}:${trimmedSeconds.padStart(2, "0")}`;
+}
+
+function parseTimeValue(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return { minutes: "", seconds: "" };
+
+  if (!trimmed.includes(":")) {
+    return { minutes: trimmed, seconds: "" };
+  }
+
+  const [minutes = "", seconds = ""] = trimmed.split(":");
+  return { minutes: minutes.trim(), seconds: seconds.trim() };
+}
+
+function previousValue(value: number | null | undefined) {
+  return value !== null && value !== undefined ? `${value}` : "0";
+}
+
+function previousTimeValue(
+  minutes: number | null | undefined,
+  seconds: number | null | undefined,
+) {
+  if (minutes === null && seconds === null) return "0";
+  if (minutes === undefined && seconds === undefined) return "0";
+
+  const minValue = minutes ?? 0;
+  const secValue = seconds ?? 0;
+  return `${minValue}:${String(secValue).padStart(2, "0")}`;
+}
+
+function getPreviousPlaceholder(
+  field: SetMetricField,
+  previousSet: PreviousExercisePerformance["sets"][number] | null,
+) {
+  if (!previousSet) return "0";
+  if (field === "distance") return previousValue(previousSet.distance);
+  if (field === "kg") return previousValue(previousSet.kg);
+  if (field === "reps") return previousValue(previousSet.reps);
+  if (field === "minutes") return previousValue(previousSet.minutes);
+  if (field === "seconds") return previousValue(previousSet.seconds);
+  return previousTimeValue(previousSet.minutes, previousSet.seconds);
+}
+
+function buildSetPayload(exerciseType: string, set: ActiveWorkoutSet) {
+  const visibleFields = new Set(
+    getSetFieldPlan(exerciseType).map((fieldPlan) => fieldPlan.field),
+  );
+  const compactTime = visibleFields.has("time")
+    ? parseTimeValue(set.time)
+    : null;
+
+  return {
+    distance: visibleFields.has("distance")
+      ? parseOptionalNumber(set.distance)
+      : null,
+    id: set.id,
+    kg: visibleFields.has("kg") ? parseOptionalNumber(set.kg) : null,
+    minutes: compactTime
+      ? parseOptionalInteger(compactTime.minutes)
+      : visibleFields.has("minutes")
+        ? parseOptionalInteger(set.minutes)
+        : null,
+    notes: set.notes,
+    reps: visibleFields.has("reps") ? parseOptionalInteger(set.reps) : null,
+    seconds: compactTime
+      ? parseOptionalInteger(compactTime.seconds)
+      : visibleFields.has("seconds")
+        ? parseOptionalInteger(set.seconds)
+        : null,
+    type: set.type,
+  };
 }
 
 function calculateDurationMinutes(
@@ -252,6 +391,7 @@ function buildWorkout(routine: Routine): ActiveWorkout {
     exercises: routine.exercises.map((exercise) => {
       const totalSets = exercise.warmUpSets + exercise.workingSets;
       const sets = Array.from({ length: totalSets }, (_, index) => ({
+        distance: "",
         id: createId(`${exercise.id}-set-${index + 1}`),
         type:
           index < exercise.warmUpSets
@@ -261,12 +401,14 @@ function buildWorkout(routine: Routine): ActiveWorkout {
         reps: "",
         minutes: "",
         seconds: "",
+        time: "",
         notes: "",
       }));
 
       return {
         id: createId(exercise.id),
         exerciseId: exercise.exerciseId,
+        exerciseType: normaliseExerciseType(exercise.exerciseType),
         routineExerciseId: exercise.id,
         name: exercise.name,
         notes: "",
@@ -300,12 +442,14 @@ function createClearedReplacementSets(
   replacementExerciseId: string,
 ) {
   return exercise.sets.map((set, index) => ({
+    distance: "",
     id: createId(`${replacementExerciseId}-set-${index + 1}`),
     type: set.type,
     kg: "",
     reps: "",
     minutes: "",
     seconds: "",
+    time: "",
     notes: "",
   }));
 }
@@ -316,18 +460,21 @@ function createDefaultExerciseFromRecord(
   return {
     id: createId(`workout-${exercise.id}`),
     exerciseId: exercise.id,
+    exerciseType: normaliseExerciseType(exercise.exerciseType),
     routineExerciseId: "",
     name: exercise.name,
     notes: "",
     isStarred: false,
     inputMode: "weightReps",
     sets: Array.from({ length: 3 }, (_, index) => ({
+      distance: "",
       id: createId(`${exercise.id}-set-${index + 1}`),
       type: "normal" as const,
       kg: "",
       reps: "",
       minutes: "",
       seconds: "",
+      time: "",
       notes: "",
     })),
   };
@@ -592,8 +739,11 @@ export default function ActiveWorkoutScreen() {
   const autosavePayloadRef = useRef<ReturnType<
     typeof buildWorkoutPayload
   > | null>(null);
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autosaveSavingRef = useRef(false);
+  const autosaveWriteRef = useRef<Promise<void> | null>(null);
   const isDeletingWorkoutRef = useRef(false);
+  const isFinishingWorkoutRef = useRef(false);
 
   useEffect(() => {
     if (workoutId) {
@@ -625,17 +775,23 @@ export default function ActiveWorkoutScreen() {
               id: exercise.id,
               routineExerciseId: exercise.routineExerciseId ?? "",
               exerciseId: exercise.exerciseId,
+              exerciseType: normaliseExerciseType(exercise.exerciseType),
               name: exercise.name,
               notes: exercise.notes,
               isStarred: exercise.isStarred,
               inputMode: "weightReps",
               sets: exercise.sets.map((set) => ({
+                distance: set.distance === null ? "" : String(set.distance),
                 id: set.id,
                 type: set.type,
                 kg: set.kg === null ? "" : String(set.kg),
                 reps: set.reps === null ? "" : String(set.reps),
                 minutes: set.minutes === null ? "" : String(set.minutes),
                 seconds: set.seconds === null ? "" : String(set.seconds),
+                time: formatTimeValue(
+                  set.minutes === null ? "" : String(set.minutes),
+                  set.seconds === null ? "" : String(set.seconds),
+                ),
                 notes: set.notes,
               })),
             })),
@@ -660,17 +816,23 @@ export default function ActiveWorkoutScreen() {
                 id: exercise.id,
                 routineExerciseId: exercise.routineExerciseId ?? "",
                 exerciseId: exercise.exerciseId,
+                exerciseType: normaliseExerciseType(exercise.exerciseType),
                 name: exercise.name,
                 notes: exercise.notes,
                 isStarred: exercise.isStarred,
                 inputMode: "weightReps",
                 sets: exercise.sets.map((set) => ({
+                  distance: set.distance === null ? "" : String(set.distance),
                   id: set.id,
                   type: set.type,
                   kg: set.kg === null ? "" : String(set.kg),
                   reps: set.reps === null ? "" : String(set.reps),
                   minutes: set.minutes === null ? "" : String(set.minutes),
                   seconds: set.seconds === null ? "" : String(set.seconds),
+                  time: formatTimeValue(
+                    set.minutes === null ? "" : String(set.minutes),
+                    set.seconds === null ? "" : String(set.seconds),
+                  ),
                   notes: set.notes,
                 })),
               })),
@@ -774,6 +936,7 @@ export default function ActiveWorkoutScreen() {
                 ? {
                     ...workoutExercise,
                     exerciseId: exercise.id,
+                    exerciseType: normaliseExerciseType(exercise.exerciseType),
                     name: exercise.name,
                     notes: "",
                     isStarred: false,
@@ -830,7 +993,7 @@ export default function ActiveWorkoutScreen() {
     previousLookupKeyRef.current = lookupKey;
 
     let mounted = true;
-    const excludeWorkoutId = workout.mode === "editSaved" ? workout.id : null;
+    const excludeWorkoutId = workout.id ?? null;
 
     Promise.all(
       workout.exercises.map(async (exercise) => {
@@ -859,6 +1022,7 @@ export default function ActiveWorkoutScreen() {
   useEffect(() => {
     if (!workout || !workout.id) return;
     if (isDeletingWorkoutRef.current) return;
+    if (isFinishingWorkoutRef.current) return;
 
     const workoutIdToSave = workout.id;
     const payload = buildWorkoutPayload(workout);
@@ -867,6 +1031,7 @@ export default function ActiveWorkoutScreen() {
 
     setAutosaveStatus("saving");
     const timer = setTimeout(() => {
+      autosaveTimerRef.current = null;
       autosavePayloadRef.current = payload;
       autosavePayloadKeyRef.current = payloadKey;
 
@@ -879,7 +1044,7 @@ export default function ActiveWorkoutScreen() {
         }
 
         autosaveSavingRef.current = true;
-        void updateWorkout(workoutIdToSave, nextPayload)
+        const writePromise = updateWorkout(workoutIdToSave, nextPayload)
           .then(() => {
             autosaveKeyRef.current = nextKey;
             setAutosaveStatus("saved");
@@ -890,16 +1055,30 @@ export default function ActiveWorkoutScreen() {
           })
           .finally(() => {
             autosaveSavingRef.current = false;
-            if (autosavePayloadKeyRef.current !== autosaveKeyRef.current) {
+            if (autosaveWriteRef.current === writePromise) {
+              autosaveWriteRef.current = null;
+            }
+            if (
+              !isFinishingWorkoutRef.current &&
+              autosavePayloadKeyRef.current !== autosaveKeyRef.current
+            ) {
               flushAutosave();
             }
           });
+        autosaveWriteRef.current = writePromise;
+        void writePromise;
       };
 
       flushAutosave();
     }, 450);
+    autosaveTimerRef.current = timer;
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      if (autosaveTimerRef.current === timer) {
+        autosaveTimerRef.current = null;
+      }
+    };
   }, [workout]);
 
   const updateWorkoutField = (field: WorkoutField, value: string) => {
@@ -925,6 +1104,33 @@ export default function ActiveWorkoutScreen() {
                 ...exercise,
                 sets: exercise.sets.map((set) =>
                   set.id === setId ? { ...set, [field]: value } : set,
+                ),
+              }
+            : exercise,
+        ),
+      };
+    });
+  };
+
+  const updateSetTimeField = (
+    exerciseId: string,
+    setId: string,
+    value: string,
+  ) => {
+    const { minutes, seconds } = parseTimeValue(value);
+    setWorkout((current) => {
+      if (!current) return current;
+
+      return {
+        ...current,
+        exercises: current.exercises.map((exercise) =>
+          exercise.id === exerciseId
+            ? {
+                ...exercise,
+                sets: exercise.sets.map((set) =>
+                  set.id === setId
+                    ? { ...set, minutes, seconds, time: value }
+                    : set,
                 ),
               }
             : exercise,
@@ -975,12 +1181,14 @@ export default function ActiveWorkoutScreen() {
             sets: [
               ...exercise.sets,
               {
+                distance: "",
                 id: createId(`${exercise.routineExerciseId}-set`),
                 type: "normal",
                 kg: "",
                 reps: "",
                 minutes: "",
                 seconds: "",
+                time: "",
                 notes: "",
               },
             ],
@@ -1006,6 +1214,18 @@ export default function ActiveWorkoutScreen() {
         }),
       };
     });
+  };
+
+  const confirmRemoveSetFromExercise = (exerciseId: string, setId: string) => {
+    setSelectedSet(null);
+    Alert.alert("Delete set?", "This will remove this set from the workout.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: () => removeSetFromExercise(exerciseId, setId),
+      },
+    ]);
   };
 
   const updateSetType = (
@@ -1067,20 +1287,15 @@ export default function ActiveWorkoutScreen() {
     endTime: candidate.endTime,
     exercises: candidate.exercises.map((exercise) => ({
       exerciseId: exercise.exerciseId ?? null,
+      exerciseType: exercise.exerciseType,
       id: exercise.id,
       isStarred: exercise.isStarred,
       name: exercise.name,
       notes: exercise.notes,
       routineExerciseId: exercise.routineExerciseId,
-      sets: exercise.sets.map((set) => ({
-        id: set.id,
-        kg: parseOptionalNumber(set.kg),
-        minutes: parseOptionalInteger(set.minutes),
-        notes: set.notes,
-        reps: parseOptionalInteger(set.reps),
-        seconds: parseOptionalInteger(set.seconds),
-        type: set.type,
-      })),
+      sets: exercise.sets.map((set) =>
+        buildSetPayload(exercise.exerciseType, set),
+      ),
     })),
     name: candidate.name,
     notes: candidate.notes,
@@ -1095,8 +1310,16 @@ export default function ActiveWorkoutScreen() {
   ) => {
     if (isSavingWorkout || !candidate.id) return;
 
+    isFinishingWorkoutRef.current = true;
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
+    autosavePayloadRef.current = null;
+    autosavePayloadKeyRef.current = autosaveKeyRef.current;
     setIsSavingWorkout(true);
     try {
+      await autosaveWriteRef.current;
       const payload = buildWorkoutPayload(candidate);
       await markWorkoutCompleted(candidate.id, {
         ...payload,
@@ -1114,6 +1337,7 @@ export default function ActiveWorkoutScreen() {
         "Something went wrong while saving this workout. Please try again.",
       );
     } finally {
+      isFinishingWorkoutRef.current = false;
       setIsSavingWorkout(false);
     }
   };
@@ -1126,6 +1350,7 @@ export default function ActiveWorkoutScreen() {
       status: "completed" as const,
       endTime: workout.endTime || formatTimeField(new Date()),
     };
+    isFinishingWorkoutRef.current = true;
     setWorkout(completedWorkout);
     void saveFinishedWorkout(completedWorkout);
   };
@@ -1594,15 +1819,17 @@ export default function ActiveWorkoutScreen() {
                   exerciseNoteTargetId === exercise.id ? (
                     <TextInput
                       multiline
-                      onContentSizeChange={(event) =>
+                      onContentSizeChange={(event) => {
+                        const height = event.nativeEvent.contentSize.height;
+
                         setNoteHeights((current) => ({
                           ...current,
                           [`exercise-${exercise.id}`]: Math.max(
                             48,
-                            Math.min(150, event.nativeEvent.contentSize.height),
+                            Math.min(150, height),
                           ),
-                        }))
-                      }
+                        }));
+                      }}
                       onChangeText={(value) =>
                         updateExerciseNote(exercise.id, value)
                       }
@@ -1630,48 +1857,34 @@ export default function ActiveWorkoutScreen() {
                   ) : null}
 
                   {exercise.sets.map((set) => {
+                    const setFieldPlan = getSetFieldPlan(exercise.exerciseType);
                     const previousSet = getPreviousSetForCurrent(
                       set,
                       exercise.sets,
                       previous,
                     );
 
-                    const prevKg =
-                      previousSet?.kg !== null && previousSet?.kg !== undefined
-                        ? String(previousSet.kg)
-                        : undefined;
-                    const prevReps =
-                      previousSet?.reps !== null &&
-                      previousSet?.reps !== undefined
-                        ? String(previousSet.reps)
-                        : undefined;
-                    const prevMins =
-                      previousSet?.minutes !== null &&
-                      previousSet?.minutes !== undefined
-                        ? String(previousSet.minutes)
-                        : undefined;
-                    const prevSecs =
-                      previousSet?.seconds !== null &&
-                      previousSet?.seconds !== undefined
-                        ? String(previousSet.seconds)
-                        : undefined;
-                    const prevNotes = previousSet?.notes?.trim() || undefined;
+                    const prevNotes = previousSet?.notes?.trim()
+                      ? `${previousSet.notes.trim()}`
+                      : undefined;
 
                     return (
                       <View key={set.id} style={styles.setRowGroup}>
                         <View style={styles.setHeader}>
                           <View style={styles.setNumberLabel} />
-                          {exercise.inputMode === "time" ? (
-                            <>
-                              <Text style={styles.setHeaderText}>min</Text>
-                              <Text style={styles.setHeaderText}>sec</Text>
-                            </>
-                          ) : (
-                            <>
-                              <Text style={styles.setHeaderText}>Kg</Text>
-                              <Text style={styles.setHeaderText}>Reps</Text>
-                            </>
-                          )}
+                          {setFieldPlan.map((fieldPlan) => (
+                            <Text
+                              key={fieldPlan.field}
+                              style={[
+                                styles.setHeaderText,
+                                fieldPlan.width
+                                  ? { width: fieldPlan.width }
+                                  : null,
+                              ]}
+                            >
+                              {fieldPlan.label}
+                            </Text>
+                          ))}
                           <Text
                             style={[styles.setHeaderText, styles.notesHeader]}
                           >
@@ -1701,77 +1914,39 @@ export default function ActiveWorkoutScreen() {
                             </Text>
                           </View>
 
-                          {exercise.inputMode === "time" ? (
-                            <>
-                              <SetInput
-                                fieldId={`${set.id}-minutes`}
-                                focusedFieldId={focusedFieldId}
-                                placeholder={prevMins}
-                                keyboardType="number-pad"
-                                onChangeText={(value) =>
-                                  updateSetField(
-                                    exercise.id,
-                                    set.id,
-                                    "minutes",
-                                    value,
-                                  )
-                                }
-                                setFocusedFieldId={setFocusedFieldId}
-                                value={set.minutes ?? ""}
-                              />
-                              <SetInput
-                                fieldId={`${set.id}-seconds`}
-                                focusedFieldId={focusedFieldId}
-                                placeholder={prevSecs}
-                                keyboardType="number-pad"
-                                onChangeText={(value) =>
-                                  updateSetField(
-                                    exercise.id,
-                                    set.id,
-                                    "seconds",
-                                    value,
-                                  )
-                                }
-                                setFocusedFieldId={setFocusedFieldId}
-                                value={set.seconds ?? ""}
-                              />
-                            </>
-                          ) : (
-                            <>
-                              <SetInput
-                                fieldId={`${set.id}-kg`}
-                                focusedFieldId={focusedFieldId}
-                                placeholder={prevKg}
-                                keyboardType="decimal-pad"
-                                onChangeText={(value) =>
-                                  updateSetField(
-                                    exercise.id,
-                                    set.id,
-                                    "kg",
-                                    value,
-                                  )
-                                }
-                                setFocusedFieldId={setFocusedFieldId}
-                                value={set.kg}
-                              />
-                              <SetInput
-                                fieldId={`${set.id}-reps`}
-                                focusedFieldId={focusedFieldId}
-                                placeholder={prevReps}
-                                keyboardType="number-pad"
-                                onChangeText={(value) =>
-                                  updateSetField(
-                                    exercise.id,
-                                    set.id,
-                                    "reps",
-                                    value,
-                                  )
-                                }
-                                setFocusedFieldId={setFocusedFieldId}
-                                value={set.reps}
-                              />
-                            </>
-                          )}
+                          {setFieldPlan.map((fieldPlan) => (
+                            <SetInput
+                              key={fieldPlan.field}
+                              fieldId={`${set.id}-${fieldPlan.field}`}
+                              focusedFieldId={focusedFieldId}
+                              placeholder={getPreviousPlaceholder(
+                                fieldPlan.field,
+                                previousSet,
+                              )}
+                              keyboardType={fieldPlan.keyboardType}
+                              onChangeText={(value) =>
+                                fieldPlan.field === "time"
+                                  ? updateSetTimeField(
+                                      exercise.id,
+                                      set.id,
+                                      value,
+                                    )
+                                  : updateSetField(
+                                      exercise.id,
+                                      set.id,
+                                      fieldPlan.field,
+                                      value,
+                                    )
+                              }
+                              setFocusedFieldId={setFocusedFieldId}
+                              value={
+                                fieldPlan.field === "time"
+                                  ? set.time
+                                  : (set[fieldPlan.field] ?? "")
+                              }
+                              width={fieldPlan.width}
+                            />
+                          ))}
 
                           <SetInput
                             fieldId={`${set.id}-notes`}
@@ -2186,8 +2361,10 @@ export default function ActiveWorkoutScreen() {
             accessibilityRole="button"
             onPress={() => {
               if (!selectedSet) return;
-              removeSetFromExercise(selectedSet.exerciseId, selectedSet.setId);
-              setSelectedSet(null);
+              confirmRemoveSetFromExercise(
+                selectedSet.exerciseId,
+                selectedSet.setId,
+              );
             }}
             style={({ pressed }) => [
               styles.sheetAction,
@@ -2493,6 +2670,7 @@ function SetInput({
   setFocusedFieldId,
   style,
   value,
+  width,
 }: {
   fieldId: string;
   focusedFieldId: string | null;
@@ -2504,19 +2682,28 @@ function SetInput({
   setFocusedFieldId: (fieldId: string | null) => void;
   style?: StyleProp<TextStyle>;
   value: string;
+  width?: number;
 }) {
   const focused = focusedFieldId === fieldId;
 
   return (
-    <View style={[styles.setInputWrap, multiline && styles.notesInputWrap]}>
+    <View
+      style={[
+        styles.setInputWrap,
+        width ? { width } : null,
+        multiline && styles.notesInputWrap,
+      ]}
+    >
       <TextInput
         keyboardType={keyboardType}
         multiline={multiline}
         onBlur={() => setFocusedFieldId(null)}
         onContentSizeChange={
           onContentSizeChange
-            ? (event) =>
-                onContentSizeChange(event.nativeEvent.contentSize.height)
+            ? (event) => {
+                const height = event.nativeEvent.contentSize.height;
+                onContentSizeChange(height);
+              }
             : undefined
         }
         onChangeText={onChangeText}
@@ -2524,7 +2711,12 @@ function SetInput({
         placeholder={placeholder}
         placeholderTextColor={colors.textMuted}
         scrollEnabled={multiline}
-        style={[styles.setInput, focused && styles.inputFocused, style]}
+        style={[
+          styles.setInput,
+          width ? { width } : null,
+          focused && styles.inputFocused,
+          style,
+        ]}
         textAlignVertical={multiline ? "top" : "center"}
         value={value}
       />
@@ -2849,7 +3041,7 @@ const styles = StyleSheet.create({
     width: 58,
   },
   notesInput: {
-    color: "rgba(230, 231, 235, 0.8)",
+    color: colors.textPrimary,
     lineHeight: 19,
     maxHeight: 120,
     height: 38,

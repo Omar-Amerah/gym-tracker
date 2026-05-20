@@ -1,6 +1,6 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
   Modal,
@@ -130,8 +130,9 @@ export default function SelectExerciseScreen() {
 
   const [newCategoryName, setNewCategoryName] = useState("");
 
-  useEffect(() => {
+  const loadSelectionData = useCallback(() => {
     let mounted = true;
+    setIsLoading(true);
 
     Promise.all([listCategories(), listExercises(searchQuery)])
       .then(([storedCategories, storedExercises]) => {
@@ -151,6 +152,8 @@ export default function SelectExerciseScreen() {
     };
   }, [searchQuery]);
 
+  useFocusEffect(loadSelectionData);
+
   const handleCreateCategory = async () => {
     const trimmedName = newCategoryName.trim();
     if (!trimmedName) return;
@@ -163,8 +166,12 @@ export default function SelectExerciseScreen() {
 
   const handleDeleteCategory = async (categoryToDelete: string) => {
     await deleteCategory(categoryToDelete);
-    setCategories(await listCategories());
-    setExerciseResults(await listExercises(searchQuery));
+    await Promise.all([listCategories(), listExercises(searchQuery)]).then(
+      ([storedCategories, storedExercises]) => {
+        setCategories(storedCategories);
+        setExerciseResults(storedExercises);
+      },
+    );
     setCategoryPendingDelete(null);
     setDeleteSheetOpen(false);
   };
@@ -182,7 +189,12 @@ export default function SelectExerciseScreen() {
     }
 
     if (!activeRoutineId) return;
-    addExercise(activeRoutineId, exercise.name, exercise.id);
+    addExercise(
+      activeRoutineId,
+      exercise.name,
+      exercise.id,
+      exercise.exerciseType,
+    );
     router.replace({
       pathname: "/routine/[id]",
       params: { id: activeRoutineId },

@@ -26,6 +26,7 @@ export type TargetType = "Latest" | "Routine";
 
 export type RoutineExercise = {
   exerciseId?: string | null;
+  exerciseType?: string | null;
   id: string;
   name: string;
   notes: string;
@@ -43,7 +44,12 @@ export type Routine = {
 
 type RoutinesContextValue = {
   activeRoutineId: string | null;
-  addExercise: (routineId: string, name: string, exerciseId?: string | null) => void;
+  addExercise: (
+    routineId: string,
+    name: string,
+    exerciseId?: string | null,
+    exerciseType?: string | null,
+  ) => void;
   createRoutine: () => string;
   deleteRoutine: (id: string) => void;
   duplicateRoutine: (id: string) => string | null;
@@ -180,11 +186,12 @@ export function RoutinesProvider({ children }: { children: ReactNode }) {
         );
         void updateRoutineRecord(id, patch).catch(reportPersistenceError);
       },
-      addExercise: (routineId, name, exerciseId = null) => {
+      addExercise: (routineId, name, exerciseId = null, exerciseType = null) => {
         const routineExerciseId = createId(name);
         const exercise: RoutineExercise = {
           id: routineExerciseId,
           exerciseId,
+          exerciseType,
           name,
           notes: "",
           warmUpSets: 0,

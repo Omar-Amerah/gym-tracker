@@ -33,11 +33,16 @@ const EXERCISE_TYPES = [
   "Strength: Weight, Reps",
   "Strength: Weight, Time",
   "Bodyweight: Weight, Reps",
+  "Bodyweight: Weight, Time",
   "Bodyweight: Reps",
   "Bodyweight: Time",
+  "Cardio: Distance, Time",
+  "Cardio: Time",
+  "Reps Only",
+  "Time Only",
 ];
 
-const SINGLE_ARM_OPTIONS = ["Default (Yes)", "Yes", "No"];
+const SINGLE_ARM_OPTIONS = ["No", "Yes"];
 const SLIDER_STEP = 5;
 const SLIDER_MIN = 0;
 const SLIDER_MAX = 100;

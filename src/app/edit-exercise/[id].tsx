@@ -2,6 +2,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
+    Alert,
     Animated,
     Modal,
     PanResponder,
@@ -33,11 +34,16 @@ const EXERCISE_TYPES = [
   "Strength: Weight, Reps",
   "Strength: Weight, Time",
   "Bodyweight: Weight, Reps",
+  "Bodyweight: Weight, Time",
   "Bodyweight: Reps",
   "Bodyweight: Time",
+  "Cardio: Distance, Time",
+  "Cardio: Time",
+  "Reps Only",
+  "Time Only",
 ];
 
-const SINGLE_ARM_OPTIONS = ["Default (Yes)", "Yes", "No"];
+const SINGLE_ARM_OPTIONS = ["No", "Yes"];
 
 type PickerType = "category" | "type" | "arm" | null;
 
@@ -121,7 +127,7 @@ export default function EditExerciseScreen() {
   const [name, setName] = useState("");
   const [category, setCategory] = useState("");
   const [exerciseType, setExerciseType] = useState("Strength: Weight, Reps");
-  const [singleArm, setSingleArm] = useState("Default (Yes)");
+  const [singleArm, setSingleArm] = useState("No");
   const [multiplier, setMultiplier] = useState(100);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -143,7 +149,7 @@ export default function EditExerciseScreen() {
           setName(exercise.name);
           setCategory(exercise.category);
           setExerciseType(exercise.exerciseType ?? "Strength: Weight, Reps");
-          setSingleArm(exercise.singleArm ?? "Default (Yes)");
+          setSingleArm(exercise.singleArm ?? "No");
           setMultiplier(exercise.bodyweightMultiplier);
         }
       })
@@ -215,6 +221,23 @@ export default function EditExerciseScreen() {
   const handleDeleteExercise = async () => {
     await deleteExercise(id);
     router.back();
+  };
+
+  const confirmDeleteExercise = () => {
+    Alert.alert(
+      "Delete exercise?",
+      `This will permanently delete ${name.trim() || "this exercise"} from the library.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            void handleDeleteExercise();
+          },
+        },
+      ],
+    );
   };
 
   const handlePickerSelect = (item: string) => {
@@ -400,9 +423,7 @@ export default function EditExerciseScreen() {
               styles.deleteAction,
               pressed && styles.pressed,
             ]}
-            onPress={() => {
-              void handleDeleteExercise();
-            }}
+            onPress={confirmDeleteExercise}
           >
             <MaterialCommunityIcons
               color="#ffaaa1"

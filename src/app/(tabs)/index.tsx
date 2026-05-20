@@ -18,6 +18,7 @@ export default function LogScreen() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isStartingWorkout, setIsStartingWorkout] = useState(false);
   const [workouts, setWorkouts] = useState<LoggedWorkout[]>([]);
 
   useFocusEffect(
@@ -25,6 +26,7 @@ export default function LogScreen() {
       let mounted = true;
 
       setIsLoading(true);
+      setIsStartingWorkout(false);
       setError(null);
       listLoggedWorkouts()
         .then((savedWorkouts) => {
@@ -116,9 +118,15 @@ export default function LogScreen() {
         <Pressable
           accessibilityLabel="Start workout"
           accessibilityRole="button"
-          onPress={() => router.push("/workout/new")}
+          disabled={isStartingWorkout}
+          onPress={() => {
+            if (isStartingWorkout) return;
+            setIsStartingWorkout(true);
+            router.push("/workout/new");
+          }}
           style={({ pressed }) => [
             styles.floatingAddButton,
+            isStartingWorkout && styles.disabledAction,
             pressed && styles.addButtonPressed,
           ]}
         >
@@ -267,6 +275,9 @@ const styles = StyleSheet.create({
   },
   addButtonPressed: {
     opacity: 0.86,
+  },
+  disabledAction: {
+    opacity: 0.55,
   },
   plusIcon: {
     alignItems: "center",

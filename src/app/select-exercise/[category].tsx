@@ -1,6 +1,6 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
   Modal,
@@ -130,8 +130,9 @@ export default function CategoryExercisesScreen() {
     null,
   );
 
-  useEffect(() => {
+  const loadExercises = useCallback(() => {
     let mounted = true;
+    setIsLoading(true);
 
     listExercisesByCategory(category ?? "", searchQuery)
       .then((storedExercises) => {
@@ -149,6 +150,8 @@ export default function CategoryExercisesScreen() {
     };
   }, [category, searchQuery]);
 
+  useFocusEffect(loadExercises);
+
   function selectExercise(exercise: ExerciseRecord) {
     if (
       activeWorkoutRoutineId &&
@@ -162,7 +165,12 @@ export default function CategoryExercisesScreen() {
     }
 
     if (!activeRoutineId) return;
-    addExercise(activeRoutineId, exercise.name, exercise.id);
+    addExercise(
+      activeRoutineId,
+      exercise.name,
+      exercise.id,
+      exercise.exerciseType,
+    );
     router.replace({
       pathname: "/routine/[id]",
       params: { id: activeRoutineId },

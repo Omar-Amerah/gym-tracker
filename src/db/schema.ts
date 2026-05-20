@@ -30,6 +30,7 @@ export type RoutineExerciseRecord = {
   id: string;
   routineId: string;
   exerciseId: string | null;
+  exerciseType?: string | null;
   name: string;
   notes: string | null;
   warmUpSets: number;
