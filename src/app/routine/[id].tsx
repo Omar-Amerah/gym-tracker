@@ -22,6 +22,10 @@ import {
 } from "@/components/action-buttons";
 import { AppHeader } from "@/components/app-header";
 import { BottomSheet } from "@/components/bottom-sheet";
+import {
+  deleteDraftWorkout,
+  getActiveDraftWorkout,
+} from "@/db/workoutsRepository";
 import { useRoutines } from "@/state/routines";
 import { colors } from "@/theme/colors";
 import { radius } from "@/theme/radius";
@@ -47,7 +51,6 @@ export default function RoutineDetailScreen() {
   );
   const [isStartingWorkout, setIsStartingWorkout] = useState(false);
   const [routineMenuOpen, setRoutineMenuOpen] = useState(false);
-  const [targetMenuOpen, setTargetMenuOpen] = useState(false);
 
   const routine = getRoutine(id);
   const selectedExercise =
@@ -80,13 +83,66 @@ export default function RoutineDetailScreen() {
     router.push("/select-exercise");
   }
 
-  function startWorkout() {
+  async function startWorkout() {
     if (isStartingWorkout) return;
     setIsStartingWorkout(true);
-    router.push({
-      pathname: "/active-workout/[routineId]",
-      params: { routineId },
-    });
+    try {
+      const activeDraft = await getActiveDraftWorkout();
+      if (!activeDraft) {
+        router.push({
+          pathname: "/active-workout/[routineId]",
+          params: { routineId },
+        });
+        return;
+      }
+
+      showActiveWorkoutChoice(activeDraft.id);
+    } catch (error) {
+      console.error("Failed to check active workout", error);
+      setIsStartingWorkout(false);
+      Alert.alert("Could not start workout", "Please try again.");
+    }
+  }
+
+  function showActiveWorkoutChoice(activeDraftId: string) {
+    Alert.alert(
+      "Workout in progress",
+      "You already have an active workout. Resume it or discard it and start this routine?",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+          onPress: () => setIsStartingWorkout(false),
+        },
+        {
+          text: "Resume",
+          onPress: () => {
+            router.push({
+              pathname: "/workout/[workoutId]",
+              params: { workoutId: activeDraftId },
+            });
+          },
+        },
+        {
+          text: "Discard and Start",
+          style: "destructive",
+          onPress: () => {
+            void deleteDraftWorkout(activeDraftId)
+              .then(() => {
+                router.push({
+                  pathname: "/active-workout/[routineId]",
+                  params: { routineId },
+                });
+              })
+              .catch((error) => {
+                console.error("Failed to discard active workout", error);
+                setIsStartingWorkout(false);
+                Alert.alert("Could not start workout", "Please try again.");
+              });
+          },
+        },
+      ],
+    );
   }
 
   function deleteAndLeave() {
@@ -166,22 +222,6 @@ export default function RoutineDetailScreen() {
               />
             </View>
 
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => setTargetMenuOpen(true)}
-              style={styles.inputWrap}
-            >
-              <Text style={styles.inputLabel}>Targets</Text>
-              <View style={styles.selectInput}>
-                <Text style={styles.inputText}>{routine.targetType}</Text>
-                <MaterialCommunityIcons
-                  name="chevron-down"
-                  size={24}
-                  color={colors.textSecondary}
-                />
-              </View>
-            </Pressable>
-
             <View style={styles.inputWrap}>
               <TextInput
                 multiline={true}
@@ -246,62 +286,6 @@ export default function RoutineDetailScreen() {
             )}
           </View>
         </ScrollView>
-
-        {/* --- TARGET PROGRESSION MENU --- */}
-        <BottomSheet
-          onClose={() => setTargetMenuOpen(false)}
-          visible={targetMenuOpen}
-        >
-          <Text style={styles.exerciseSheetTitle}>Target Progression</Text>
-
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => {
-              updateRoutine(routine.id, { targetType: "Routine" });
-              setTargetMenuOpen(false);
-            }}
-            style={styles.targetOptionRow}
-          >
-            <View style={styles.targetOptionText}>
-              <Text style={styles.targetOptionTitle}>Routine</Text>
-              <Text style={styles.targetOptionDesc}>
-                Use the specific sets and reps saved directly in this routine
-                template.
-              </Text>
-            </View>
-            {routine.targetType === "Routine" && (
-              <MaterialCommunityIcons
-                name="check"
-                size={24}
-                color={colors.accent}
-              />
-            )}
-          </Pressable>
-
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => {
-              updateRoutine(routine.id, { targetType: "Latest" });
-              setTargetMenuOpen(false);
-            }}
-            style={styles.targetOptionRow}
-          >
-            <View style={styles.targetOptionText}>
-              <Text style={styles.targetOptionTitle}>Latest</Text>
-              <Text style={styles.targetOptionDesc}>
-                Automatically target the exact numbers you hit the last time you
-                did this exercise.
-              </Text>
-            </View>
-            {routine.targetType === "Latest" && (
-              <MaterialCommunityIcons
-                name="check"
-                size={24}
-                color={colors.accent}
-              />
-            )}
-          </Pressable>
-        </BottomSheet>
 
         {/* --- GLOBAL ROUTINE MENU MODAL --- */}
         <BottomSheet
@@ -524,22 +508,6 @@ const styles = StyleSheet.create({
     minHeight: 64,
     paddingHorizontal: 20,
   },
-  selectInput: {
-    alignItems: "center",
-    borderColor: "rgba(255, 255, 255, 0.15)",
-    borderRadius: radius.md,
-    borderWidth: 1,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    minHeight: 64,
-    paddingHorizontal: 20,
-  },
-  inputText: {
-    color: colors.textPrimary,
-    fontSize: 16,
-    fontWeight: "400",
-    letterSpacing: 0,
-  },
   notesInput: {
     color: colors.textSecondary,
     paddingTop: 20,
@@ -612,29 +580,6 @@ const styles = StyleSheet.create({
   sheetIcon: { width: 34 },
   sheetText: { color: colors.textPrimary, fontSize: 17, fontWeight: "500" },
   deleteText: { color: "#ffaaa1" },
-
-  // --- TARGET SELECTOR MODAL STYLES ---
-  targetOptionRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 12,
-  },
-  targetOptionText: {
-    flex: 1,
-    paddingRight: 24,
-  },
-  targetOptionTitle: {
-    color: colors.textPrimary,
-    fontSize: 18,
-    fontWeight: "600",
-    marginBottom: 4,
-  },
-  targetOptionDesc: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    lineHeight: 20,
-  },
 
   stepperRow: {
     alignItems: "center",

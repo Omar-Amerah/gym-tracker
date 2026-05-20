@@ -8,7 +8,11 @@ import {
 } from "react";
 import { Alert } from "react-native";
 
-import { getSavedWorkout, saveWorkout } from "@/db/workoutsRepository";
+import {
+  getActiveDraftWorkout,
+  getSavedWorkout,
+  saveWorkout,
+} from "@/db/workoutsRepository";
 import { useRoutines } from "@/state/routines";
 
 import type { ActiveWorkout, AutosaveStatus } from "./types";
@@ -78,10 +82,21 @@ export function useWorkoutLoader({
       if (initialisedRoutineId === "new") return;
       const draft = buildEmptyWorkout();
       let mounted = true;
-      saveWorkout(buildWorkoutPayload(draft))
-        .then((createdWorkoutId) => {
+      getActiveDraftWorkout()
+        .then((activeDraft) =>
+          activeDraft
+            ? getSavedWorkout(activeDraft.id)
+            : saveWorkout(buildWorkoutPayload(draft)).then((createdWorkoutId) =>
+                getSavedWorkout(createdWorkoutId),
+              ),
+        )
+        .then((savedDraft) => {
           if (!mounted) return;
-          const persistedDraft = { ...draft, id: createdWorkoutId };
+          if (!savedDraft) {
+            setAutosaveStatus("failed");
+            return;
+          }
+          const persistedDraft = buildWorkoutFromSaved(savedDraft);
           setWorkout(persistedDraft);
           markWorkoutAsSaved(persistedDraft);
           setInitialisedRoutineId("new");
@@ -96,13 +111,24 @@ export function useWorkoutLoader({
     }
 
     if (!routine || initialisedRoutineId === routine.id) return;
-    const draft = buildWorkout(routine);
     let mounted = true;
+    const draft = buildWorkout(routine);
     const initialPayload = buildWorkoutPayload(draft);
-    saveWorkout(initialPayload)
-      .then((createdWorkoutId) => {
+    getActiveDraftWorkout()
+      .then((activeDraft) =>
+        activeDraft
+          ? getSavedWorkout(activeDraft.id)
+          : saveWorkout(initialPayload).then((createdWorkoutId) =>
+              getSavedWorkout(createdWorkoutId),
+            ),
+      )
+      .then((savedDraft) => {
         if (!mounted) return;
-        const persistedDraft = { ...draft, id: createdWorkoutId };
+        if (!savedDraft) {
+          setAutosaveStatus("failed");
+          return;
+        }
+        const persistedDraft = buildWorkoutFromSaved(savedDraft);
         setWorkout(persistedDraft);
         markWorkoutAsSaved(persistedDraft);
         setInitialisedRoutineId(routine.id);
@@ -127,8 +153,13 @@ export function useWorkoutLoader({
   const isLoadingWorkout = useMemo(
     () =>
       isLoading ||
-      (Boolean(workoutId) && initialisedRoutineId !== `missing-${workoutId}`) ||
-      (!routeRoutineId && initialisedRoutineId !== "new"),
+      (Boolean(workoutId) &&
+        initialisedRoutineId !== `workout-${workoutId}` &&
+        initialisedRoutineId !== `missing-${workoutId}`) ||
+      (!workoutId && !routeRoutineId && initialisedRoutineId !== "new") ||
+      (!workoutId &&
+        Boolean(routeRoutineId) &&
+        initialisedRoutineId !== routeRoutineId),
     [initialisedRoutineId, isLoading, routeRoutineId, workoutId],
   );
 

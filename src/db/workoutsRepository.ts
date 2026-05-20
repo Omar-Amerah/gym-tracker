@@ -77,6 +77,7 @@ export type PreviousExerciseSet = {
   seconds: number | null;
   setOrder: number;
   setType: "warmup" | "normal" | "drop";
+  time: string | null;
 };
 
 export type PreviousExercisePerformance = {
@@ -90,6 +91,7 @@ export type PreviousExercisePerformance = {
 
 type WorkoutRow = {
   bodyweightKg?: number | null;
+  createdAt?: string;
   date: string;
   durationMinutes: number | null;
   endTime?: string | null;
@@ -99,6 +101,7 @@ type WorkoutRow = {
   routineId?: string | null;
   status?: WorkoutStatus;
   startTime?: string | null;
+  updatedAt?: string;
 };
 
 type SavedExerciseRow = {
@@ -116,6 +119,10 @@ type ExerciseSummaryRow = {
   name: string;
   setCount: number;
   workoutId: string;
+};
+
+type DraftWorkoutRow = WorkoutRow & {
+  exerciseCount: number;
 };
 
 type SavedSetRow = {
@@ -144,8 +151,17 @@ export async function saveWorkout(input: WorkoutInput) {
   const db = await getDatabase();
   const timestamp = nowIso();
   const workoutId = createId("workout");
+  let existingDraftId: string | null = null;
 
   await db.withTransactionAsync(async () => {
+    if (input.status === "draft") {
+      const activeDraft = await normaliseDraftWorkouts(db);
+      if (activeDraft) {
+        existingDraftId = activeDraft.id;
+        return;
+      }
+    }
+
     await db.runAsync(
       `INSERT INTO workouts
         (id, routineId, name, bodyweightKg, date, startTime, endTime, durationMinutes, notes, status, createdAt, updatedAt)
@@ -205,7 +221,7 @@ export async function saveWorkout(input: WorkoutInput) {
     }
   });
 
-  return workoutId;
+  return existingDraftId ?? workoutId;
 }
 
 export async function updateWorkout(id: string, input: WorkoutInput) {
@@ -298,6 +314,23 @@ export async function deleteWorkout(id: string) {
   });
 }
 
+export async function deleteDraftWorkout(workoutId: string) {
+  const workout = await getSavedWorkout(workoutId);
+  if (workout?.status !== "draft") return;
+
+  await deleteWorkout(workoutId);
+}
+
+export async function getActiveDraftWorkout(): Promise<LoggedWorkout | null> {
+  const db = await getDatabase();
+  const activeDraft = await normaliseDraftWorkouts(db);
+  if (!activeDraft) return null;
+
+  const exercises = await getExerciseSummaries(db, [activeDraft.id]);
+
+  return formatLoggedWorkout(activeDraft, exercises);
+}
+
 export async function getSavedWorkout(id: string): Promise<SavedWorkout | null> {
   const db = await getDatabase();
   const workout = await db.getFirstAsync<WorkoutRow>(
@@ -366,27 +399,54 @@ export async function getSavedWorkout(id: string): Promise<SavedWorkout | null> 
 }
 
 export async function listLoggedWorkouts(): Promise<LoggedWorkout[]> {
+  return listCompletedWorkouts();
+}
+
+export async function listCompletedWorkouts(): Promise<LoggedWorkout[]> {
   const db = await getDatabase();
   const workouts = await db.getAllAsync<WorkoutRow>(
     `SELECT id, name, date, durationMinutes, status
      FROM workouts
+     WHERE status = 'completed'
      ORDER BY createdAt DESC`,
   );
 
   if (workouts.length === 0) return [];
 
-  const summaries = await db.getAllAsync<ExerciseSummaryRow>(
+  const summaries = await getExerciseSummaries(
+    db,
+    workouts.map((workout) => workout.id),
+  );
+
+  return workouts.map((workout) => formatLoggedWorkout(workout, summaries));
+}
+
+async function getExerciseSummaries(
+  db: Awaited<ReturnType<typeof getDatabase>>,
+  workoutIds: string[],
+) {
+  if (workoutIds.length === 0) return [];
+
+  const placeholders = workoutIds.map(() => "?").join(", ");
+  return db.getAllAsync<ExerciseSummaryRow>(
     `SELECT
         we.workoutId,
         we.name,
         SUM(CASE WHEN ws.setType != 'warmup' THEN 1 ELSE 0 END) AS setCount
       FROM workout_exercises we
       LEFT JOIN workout_sets ws ON ws.workoutExerciseId = we.id
+      WHERE we.workoutId IN (${placeholders})
       GROUP BY we.id
       ORDER BY we.sortOrder ASC`,
+    ...workoutIds,
   );
+}
 
-  return workouts.map((workout) => ({
+function formatLoggedWorkout(
+  workout: WorkoutRow,
+  summaries: ExerciseSummaryRow[],
+): LoggedWorkout {
+  return {
     id: workout.id,
     name: workout.name.trim() || "Untitled Workout",
     durationMinutes: workout.durationMinutes,
@@ -395,7 +455,48 @@ export async function listLoggedWorkouts(): Promise<LoggedWorkout[]> {
     exercises: summaries
       .filter((summary) => summary.workoutId === workout.id)
       .map((summary) => `${summary.setCount}x ${summary.name}`),
-  }));
+  };
+}
+
+async function normaliseDraftWorkouts(
+  db: Awaited<ReturnType<typeof getDatabase>>,
+) {
+  const drafts = await db.getAllAsync<DraftWorkoutRow>(
+    `SELECT
+       w.id,
+       w.routineId,
+       w.name,
+       w.bodyweightKg,
+       w.date,
+       w.startTime,
+       w.endTime,
+       w.durationMinutes,
+       w.notes,
+       w.status,
+       w.createdAt,
+       w.updatedAt,
+       COUNT(we.id) AS exerciseCount
+     FROM workouts w
+     LEFT JOIN workout_exercises we ON we.workoutId = w.id
+     WHERE w.status = 'draft'
+     GROUP BY w.id
+     ORDER BY w.updatedAt DESC, w.createdAt DESC`,
+  );
+  const [activeDraft, ...staleDrafts] = drafts;
+
+  for (const staleDraft of staleDrafts) {
+    if (staleDraft.exerciseCount > 0) {
+      await db.runAsync(
+        "UPDATE workouts SET status = 'completed', updatedAt = ? WHERE id = ?",
+        nowIso(),
+        staleDraft.id,
+      );
+    } else {
+      await db.runAsync("DELETE FROM workouts WHERE id = ?", staleDraft.id);
+    }
+  }
+
+  return activeDraft ?? null;
 }
 
 export async function markWorkoutCompleted(id: string, input: WorkoutInput) {
@@ -427,9 +528,14 @@ export async function getLastExercisePerformance({
            w.date AS date
          FROM workout_exercises we
          INNER JOIN workouts w ON w.id = we.workoutId
-         WHERE we.exerciseId = ?
+          WHERE we.exerciseId = ?
+           AND w.status = 'completed'
            AND (? = '' OR w.id != ?)
-         ORDER BY w.createdAt DESC, we.sortOrder ASC
+         ORDER BY substr(w.date, 7, 4) || '-' || substr(w.date, 4, 2) || '-' || substr(w.date, 1, 2) DESC,
+                  w.startTime DESC,
+                  w.updatedAt DESC,
+                  w.createdAt DESC,
+                  we.sortOrder ASC
          LIMIT 1`,
         exerciseId,
         excludedId,
@@ -449,8 +555,13 @@ export async function getLastExercisePerformance({
        FROM workout_exercises we
        INNER JOIN workouts w ON w.id = we.workoutId
        WHERE LOWER(TRIM(we.name)) = LOWER(TRIM(?))
+         AND w.status = 'completed'
          AND (? = '' OR w.id != ?)
-       ORDER BY w.createdAt DESC, we.sortOrder ASC
+       ORDER BY substr(w.date, 7, 4) || '-' || substr(w.date, 4, 2) || '-' || substr(w.date, 1, 2) DESC,
+                w.startTime DESC,
+                w.updatedAt DESC,
+                w.createdAt DESC,
+                we.sortOrder ASC
        LIMIT 1`,
       trimmedName,
       excludedId,
@@ -469,6 +580,10 @@ export async function getLastExercisePerformance({
        reps,
        minutes,
        seconds,
+       CASE
+         WHEN minutes IS NULL AND seconds IS NULL THEN NULL
+         ELSE COALESCE(minutes, 0) || ':' || printf('%02d', COALESCE(seconds, 0))
+       END AS time,
        notes
      FROM workout_sets
      WHERE workoutExerciseId = ?

@@ -44,6 +44,7 @@ import type {
 } from "./types";
 import { usePreviousPerformance } from "./usePreviousPerformance";
 import { useWorkoutAutosave } from "./useWorkoutAutosave";
+import { isWorkoutIncomplete } from "./workoutCompletion";
 import { useWorkoutLoader } from "./useWorkoutLoader";
 import { normaliseExerciseType, parseTimeValue } from "./workoutFieldRules";
 import {
@@ -69,7 +70,7 @@ export function WorkoutEditorScreen() {
   const [timePickerTarget, setTimePickerTarget] = useState<
     "startTime" | "endTime" | null
   >(null);
-  const [focusedFieldId, setFocusedFieldId] = useState<string | null>(null);
+  const [, setFocusedFieldId] = useState<string | null>(null);
   const [workoutMenuOpen, setWorkoutMenuOpen] = useState(false);
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(
     null,
@@ -396,10 +397,29 @@ export function WorkoutEditorScreen() {
   const finishWorkout = () => {
     if (!workout || isSavingWorkout) return;
 
+    if (isWorkoutIncomplete(workout)) {
+      Alert.alert(
+        "Finish incomplete workout?",
+        "Some sets are missing required values. Finish anyway?",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Finish Anyway",
+            onPress: () => completeWorkout(workout),
+          },
+        ],
+      );
+      return;
+    }
+
+    completeWorkout(workout);
+  };
+
+  const completeWorkout = (candidate: ActiveWorkout) => {
     const completedWorkout = {
-      ...workout,
+      ...candidate,
       status: "completed" as const,
-      endTime: workout.endTime || formatTimeField(new Date()),
+      endTime: candidate.endTime || formatTimeField(new Date()),
     };
     isFinishingWorkoutRef.current = true;
     setWorkout(completedWorkout);

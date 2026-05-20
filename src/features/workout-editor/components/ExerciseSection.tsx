@@ -80,7 +80,9 @@ export const ExerciseSection = memo(function ExerciseSection({
         </Pressable>
       </View>
 
-      {exercise.notes.length > 0 || exerciseNoteTargetId === exercise.id ? (
+      {exercise.notes.length > 0 ||
+      exerciseNoteTargetId === exercise.id ||
+      previousExerciseNote ? (
         <TextInput
           ref={(ref) => {
             exerciseNoteRef.current = ref;

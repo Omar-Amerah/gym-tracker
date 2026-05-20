@@ -80,15 +80,15 @@ export function parseTimeValue(value: string) {
 }
 
 function previousValue(value: number | null | undefined) {
-  return value !== null && value !== undefined ? `${value}` : "0";
+  return value !== null && value !== undefined ? `${value}` : "";
 }
 
 function previousTimeValue(
   minutes: number | null | undefined,
   seconds: number | null | undefined,
 ) {
-  if (minutes === null && seconds === null) return "0";
-  if (minutes === undefined && seconds === undefined) return "0";
+  if (minutes === null && seconds === null) return "";
+  if (minutes === undefined && seconds === undefined) return "";
 
   const minValue = minutes ?? 0;
   const secValue = seconds ?? 0;
@@ -99,7 +99,7 @@ export function formatPreviousValueForField(
   field: SetMetricField,
   previousSet: PreviousExercisePerformance["sets"][number] | null,
 ) {
-  if (!previousSet) return "0";
+  if (!previousSet) return "";
   if (field === "distance") return previousValue(previousSet.distance);
   if (field === "kg") return previousValue(previousSet.kg);
   if (field === "reps") return previousValue(previousSet.reps);

@@ -6,7 +6,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AppHeader } from "@/components/app-header";
 import {
-  listLoggedWorkouts,
+  getActiveDraftWorkout,
+  listCompletedWorkouts,
   type LoggedWorkout,
 } from "@/db/workoutsRepository";
 import { colors } from "@/theme/colors";
@@ -19,7 +20,19 @@ export default function LogScreen() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isStartingWorkout, setIsStartingWorkout] = useState(false);
+  const [activeDraft, setActiveDraft] = useState<LoggedWorkout | null>(null);
   const [workouts, setWorkouts] = useState<LoggedWorkout[]>([]);
+  const visibleWorkouts = activeDraft ? [activeDraft, ...workouts] : workouts;
+
+  const openWorkout = useCallback(
+    (workout: LoggedWorkout) => {
+      router.push({
+        pathname: "/workout/[workoutId]",
+        params: { workoutId: workout.id },
+      });
+    },
+    [router],
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -28,15 +41,19 @@ export default function LogScreen() {
       setIsLoading(true);
       setIsStartingWorkout(false);
       setError(null);
-      listLoggedWorkouts()
-        .then((savedWorkouts) => {
-          if (mounted) setWorkouts(savedWorkouts);
+      Promise.all([listCompletedWorkouts(), getActiveDraftWorkout()])
+        .then(([savedWorkouts, draftWorkout]) => {
+          if (mounted) {
+            setWorkouts(savedWorkouts);
+            setActiveDraft(draftWorkout);
+          }
         })
         .catch((loadError) => {
           console.error("Failed to load logged workouts", loadError);
           if (mounted) {
             setError("Could not load workouts.");
             setWorkouts([]);
+            setActiveDraft(null);
           }
         })
         .finally(() => {
@@ -63,28 +80,23 @@ export default function LogScreen() {
             <Text style={styles.stateText}>Loading workouts...</Text>
           ) : null}
           {error ? <Text style={styles.stateText}>{error}</Text> : null}
-          {!isLoading && !error && workouts.length === 0 ? (
+          {!isLoading && !error && !activeDraft && workouts.length === 0 ? (
             <Text style={styles.stateText}>No logged workouts yet.</Text>
           ) : null}
-          {workouts.map((workout, index) => (
+          {visibleWorkouts.map((workout, index) => (
             <View key={workout.id} style={styles.entry}>
               <View style={styles.dateColumn}>
                 <Text style={styles.weekday}>{workout.weekday}</Text>
                 <Text style={styles.day}>{workout.day}</Text>
                 <Text style={styles.month}>{workout.month}</Text>
-                {index < workouts.length - 1 ? (
+                {index < visibleWorkouts.length - 1 ? (
                   <View style={styles.timelineLine} />
                 ) : null}
               </View>
 
               <Pressable
                 accessibilityRole="button"
-                onPress={() =>
-                  router.push({
-                    pathname: "/workout/[workoutId]",
-                    params: { workoutId: workout.id },
-                  })
-                }
+                onPress={() => openWorkout(workout)}
                 style={({ pressed }) => [
                   styles.card,
                   pressed && styles.cardPressed,
@@ -115,26 +127,56 @@ export default function LogScreen() {
           ))}
         </ScrollView>
 
-        <Pressable
-          accessibilityLabel="Start workout"
-          accessibilityRole="button"
-          disabled={isStartingWorkout}
-          onPress={() => {
-            if (isStartingWorkout) return;
-            setIsStartingWorkout(true);
-            router.push("/workout/new");
-          }}
-          style={({ pressed }) => [
-            styles.floatingAddButton,
-            isStartingWorkout && styles.disabledAction,
-            pressed && styles.addButtonPressed,
-          ]}
-        >
-          <View style={styles.plusIcon}>
-            <View style={styles.plusVertical} />
-            <View style={styles.plusHorizontal} />
-          </View>
-        </Pressable>
+        {activeDraft ? (
+          <Pressable
+            accessibilityLabel="Resume workout"
+            accessibilityRole="button"
+            onPress={() =>
+              router.push({
+                pathname: "/workout/[workoutId]",
+                params: { workoutId: activeDraft.id },
+              })
+            }
+            style={({ pressed }) => [
+              styles.resumePill,
+              pressed && styles.resumePillPressed,
+            ]}
+          >
+            <Text style={styles.resumeLabel}>Resume Workout</Text>
+            <Text style={styles.resumeTitle}>{activeDraft.name}</Text>
+          </Pressable>
+        ) : (
+          <Pressable
+            accessibilityLabel="Start workout"
+            accessibilityRole="button"
+            disabled={isStartingWorkout}
+            onPress={async () => {
+              if (isStartingWorkout) return;
+              setIsStartingWorkout(true);
+              try {
+                const draftWorkout = await getActiveDraftWorkout();
+                if (draftWorkout) {
+                  openWorkout(draftWorkout);
+                  return;
+                }
+                router.push("/workout/new");
+              } catch (startError) {
+                console.error("Failed to start workout", startError);
+                setIsStartingWorkout(false);
+              }
+            }}
+            style={({ pressed }) => [
+              styles.floatingAddButton,
+              isStartingWorkout && styles.disabledAction,
+              pressed && styles.addButtonPressed,
+            ]}
+          >
+            <View style={styles.plusIcon}>
+              <View style={styles.plusVertical} />
+              <View style={styles.plusHorizontal} />
+            </View>
+          </Pressable>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -154,6 +196,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
+    paddingBottom: 96,
     paddingTop: 0,
   },
   stateText: {
@@ -278,6 +321,41 @@ const styles = StyleSheet.create({
   },
   disabledAction: {
     opacity: 0.55,
+  },
+  resumePill: {
+    alignItems: "center",
+    alignSelf: "center",
+    backgroundColor: colors.fabBackground,
+    borderRadius: radius.pill,
+    bottom: 18,
+    maxWidth: 520,
+    minHeight: 54,
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+    position: "absolute",
+    shadowColor: colors.shadow,
+    shadowOffset: { width: 0, height: 7 },
+    shadowOpacity: 0.28,
+    shadowRadius: 12,
+    width: "74%",
+    zIndex: 20,
+  },
+  resumePillPressed: {
+    opacity: 0.88,
+  },
+  resumeLabel: {
+    color: colors.background,
+    fontSize: 15,
+    fontWeight: "700",
+    letterSpacing: 0,
+    lineHeight: 18,
+  },
+  resumeTitle: {
+    color: colors.background,
+    fontSize: 12,
+    letterSpacing: 0,
+    lineHeight: 16,
+    opacity: 0.72,
   },
   plusIcon: {
     alignItems: "center",

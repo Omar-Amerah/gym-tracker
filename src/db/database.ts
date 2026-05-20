@@ -156,6 +156,51 @@ async function migrateSchema(db: SQLite.SQLiteDatabase) {
   if (!hasExerciseType) {
     await db.execAsync("ALTER TABLE workout_exercises ADD COLUMN exerciseType TEXT;");
   }
+
+  await db.execAsync(`
+    UPDATE workouts
+    SET status = 'completed', updatedAt = datetime('now')
+     WHERE id IN (
+      SELECT stale_workouts.id
+      FROM workouts stale_workouts
+      WHERE stale_workouts.status = 'draft'
+        AND stale_workouts.id != (
+          SELECT active_workouts.id
+          FROM workouts active_workouts
+          WHERE active_workouts.status = 'draft'
+          ORDER BY active_workouts.updatedAt DESC, active_workouts.createdAt DESC
+          LIMIT 1
+        )
+        AND EXISTS (
+          SELECT 1
+          FROM workout_exercises
+          WHERE workout_exercises.workoutId = stale_workouts.id
+        )
+    );
+
+    DELETE FROM workouts
+    WHERE id IN (
+      SELECT stale_workouts.id
+      FROM workouts stale_workouts
+      WHERE stale_workouts.status = 'draft'
+        AND stale_workouts.id != (
+          SELECT active_workouts.id
+          FROM workouts active_workouts
+          WHERE active_workouts.status = 'draft'
+          ORDER BY active_workouts.updatedAt DESC, active_workouts.createdAt DESC
+          LIMIT 1
+        )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM workout_exercises
+          WHERE workout_exercises.workoutId = stale_workouts.id
+        )
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_single_draft_workout
+      ON workouts(status)
+      WHERE status = 'draft';
+  `);
 }
 
 async function seedIfEmpty(db: SQLite.SQLiteDatabase) {
