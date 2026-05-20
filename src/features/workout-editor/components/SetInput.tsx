@@ -1,4 +1,4 @@
-import { memo, useState } from "react";
+import { memo, useRef, useState } from "react";
 import { TextInput, View, type StyleProp, type TextStyle } from "react-native";
 
 import { colors } from "@/theme/colors";
@@ -7,13 +7,12 @@ import { styles } from "../styles";
 
 type SetInputProps = {
   fieldId: string;
-  focusedFieldId: string | null;
   keyboardType?: "default" | "decimal-pad" | "number-pad";
   multiline?: boolean;
   onChangeText: (value: string) => void;
   onContentSizeChange?: (height: number) => void;
+  onFocusScroll?: (fieldId: string, inputRef: TextInput | null) => void;
   placeholder?: string;
-  setFocusedFieldId: (fieldId: string | null) => void;
   style?: StyleProp<TextStyle>;
   value: string;
   width?: number;
@@ -21,19 +20,18 @@ type SetInputProps = {
 
 export const SetInput = memo(function SetInput({
   fieldId,
-  focusedFieldId,
   placeholder,
   keyboardType,
   multiline,
   onContentSizeChange,
   onChangeText,
-  setFocusedFieldId,
+  onFocusScroll,
   style,
   value,
   width,
 }: SetInputProps) {
+  const inputRef = useRef<TextInput | null>(null);
   const [isFocused, setIsFocused] = useState(false);
-  const showFocus = isFocused || focusedFieldId === fieldId;
 
   return (
     <View
@@ -44,26 +42,22 @@ export const SetInput = memo(function SetInput({
       ]}
     >
       <TextInput
+        ref={inputRef}
         keyboardType={keyboardType}
         multiline={multiline}
-        onBlur={() => {
-          setIsFocused(false);
-          setFocusedFieldId(null);
-        }}
+        onBlur={() => setIsFocused(false)}
         onContentSizeChange={
           onContentSizeChange
             ? (event) => {
                 const height = event.nativeEvent.contentSize.height;
-                // Clamp to 38px until the content genuinely wraps to a second line (> 50px)
-                const clampedHeight = height < 50 ? 38 : Math.min(120, height);
-                onContentSizeChange(clampedHeight);
+                onContentSizeChange(height);
               }
             : undefined
         }
         onChangeText={onChangeText}
         onFocus={() => {
           setIsFocused(true);
-          setFocusedFieldId(fieldId);
+          onFocusScroll?.(fieldId, inputRef.current);
         }}
         placeholder={placeholder}
         placeholderTextColor={colors.textMuted}
@@ -71,7 +65,7 @@ export const SetInput = memo(function SetInput({
         style={[
           styles.setInput,
           width ? { width } : null,
-          showFocus && styles.inputFocused,
+          isFocused && styles.inputFocused,
           style,
         ]}
         textAlignVertical={multiline ? "top" : "center"}

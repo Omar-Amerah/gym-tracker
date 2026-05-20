@@ -1,6 +1,6 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { memo } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Pressable, Text, TextInput, View } from "react-native";
 
 import type { PreviousExercisePerformance } from "@/db/workoutsRepository";
 import { colors } from "@/theme/colors";
@@ -19,10 +19,9 @@ type PreviousSet = PreviousExercisePerformance["sets"][number] | null;
 
 type SetRowProps = {
   exercise: ActiveWorkoutExercise;
-  focusedFieldId: string | null;
   noteHeight: number | undefined;
+  onFocusScroll?: (fieldId: string, inputRef: TextInput | null) => void;
   onOpenSetOptions: (exerciseId: string, setId: string) => void;
-  onSetFocusedFieldId: (fieldId: string | null) => void;
   onSetNoteHeight: (setId: string, height: number) => void;
   onUpdateSetField: (
     exerciseId: string,
@@ -41,10 +40,9 @@ type SetRowProps = {
 
 export const SetRow = memo(function SetRow({
   exercise,
-  focusedFieldId,
   noteHeight,
+  onFocusScroll,
   onOpenSetOptions,
-  onSetFocusedFieldId,
   onSetNoteHeight,
   onUpdateSetField,
   onUpdateSetTimeField,
@@ -98,9 +96,9 @@ export const SetRow = memo(function SetRow({
           <SetInput
             key={fieldPlan.field}
             fieldId={`${set.id}-${fieldPlan.field}`}
-            focusedFieldId={focusedFieldId}
             placeholder={getPreviousPlaceholder(fieldPlan.field, previousSet)}
             keyboardType={fieldPlan.keyboardType}
+            onFocusScroll={onFocusScroll}
             onChangeText={(value) => {
               if (fieldPlan.field === "time") {
                 onUpdateSetTimeField(exercise.id, set.id, value);
@@ -109,7 +107,6 @@ export const SetRow = memo(function SetRow({
 
               onUpdateSetField(exercise.id, set.id, fieldPlan.field, value);
             }}
-            setFocusedFieldId={onSetFocusedFieldId}
             value={
               fieldPlan.field === "time"
                 ? set.time
@@ -121,14 +118,13 @@ export const SetRow = memo(function SetRow({
 
         <SetInput
           fieldId={`${set.id}-notes`}
-          focusedFieldId={focusedFieldId}
           placeholder={prevNotes}
           multiline
+          onFocusScroll={onFocusScroll}
           onContentSizeChange={(height) => onSetNoteHeight(set.id, height)}
           onChangeText={(value) =>
             onUpdateSetField(exercise.id, set.id, "notes", value)
           }
-          setFocusedFieldId={onSetFocusedFieldId}
           style={[
             styles.notesInput,
             {

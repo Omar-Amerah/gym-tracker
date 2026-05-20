@@ -1,5 +1,5 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { memo, useState } from "react";
+import { memo, useRef, useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
 
 import type { PreviousExercisePerformance } from "@/db/workoutsRepository";
@@ -14,13 +14,12 @@ import { SetRow } from "./SetRow";
 type ExerciseSectionProps = {
   exercise: ActiveWorkoutExercise;
   exerciseNoteTargetId: string | null;
-  focusedFieldId: string | null;
   noteHeights: Record<string, number>;
   onAddSet: (exerciseId: string) => void;
   onExerciseNoteHeight: (exerciseId: string, height: number) => void;
+  onFocusScroll?: (fieldId: string, inputRef: TextInput | null) => void;
   onOpenExerciseOptions: (exerciseId: string) => void;
   onOpenSetOptions: (exerciseId: string, setId: string) => void;
-  onSetFocusedFieldId: (fieldId: string | null) => void;
   onSetNoteHeight: (setId: string, height: number) => void;
   onShowFutureAction: (message: string) => void;
   onToggleExerciseStar: (exerciseId: string) => void;
@@ -43,13 +42,12 @@ type ExerciseSectionProps = {
 export const ExerciseSection = memo(function ExerciseSection({
   exercise,
   exerciseNoteTargetId,
-  focusedFieldId,
   noteHeights,
   onAddSet,
   onExerciseNoteHeight,
+  onFocusScroll,
   onOpenExerciseOptions,
   onOpenSetOptions,
-  onSetFocusedFieldId,
   onSetNoteHeight,
   onShowFutureAction,
   onToggleExerciseStar,
@@ -59,9 +57,8 @@ export const ExerciseSection = memo(function ExerciseSection({
   previousPerformance,
   setExerciseNoteRef,
 }: ExerciseSectionProps) {
+  const exerciseNoteRef = useRef<TextInput | null>(null);
   const [isNoteFocused, setIsNoteFocused] = useState(false);
-  const showNoteFocus =
-    isNoteFocused || focusedFieldId === `exercise-${exercise.id}-notes`;
   const previousExerciseNote = previousPerformance?.notes?.trim() || undefined;
 
   return (
@@ -85,29 +82,30 @@ export const ExerciseSection = memo(function ExerciseSection({
 
       {exercise.notes.length > 0 || exerciseNoteTargetId === exercise.id ? (
         <TextInput
+          ref={(ref) => {
+            exerciseNoteRef.current = ref;
+            setExerciseNoteRef(exercise.id, ref);
+          }}
           multiline
           onContentSizeChange={(event) => {
             const height = event.nativeEvent.contentSize.height;
-            // Clamp to 48px until it genuinely hits a second line (> 60px)
-            const clampedHeight = height < 60 ? 48 : Math.min(150, height);
-            onExerciseNoteHeight(exercise.id, clampedHeight);
+            onExerciseNoteHeight(exercise.id, height);
           }}
           onChangeText={(value) => onUpdateExerciseNote(exercise.id, value)}
-          onBlur={() => {
-            setIsNoteFocused(false);
-            onSetFocusedFieldId(null);
-          }}
+          onBlur={() => setIsNoteFocused(false)}
           onFocus={() => {
             setIsNoteFocused(true);
-            onSetFocusedFieldId(`exercise-${exercise.id}-notes`);
+            onFocusScroll?.(
+              `exercise-${exercise.id}-notes`,
+              exerciseNoteRef.current,
+            );
           }}
           placeholder={previousExerciseNote || "Exercise note"}
           placeholderTextColor={colors.textMuted}
-          ref={(ref) => setExerciseNoteRef(exercise.id, ref)}
           scrollEnabled
           style={[
             styles.exerciseNoteInput,
-            showNoteFocus && styles.inputFocused,
+            isNoteFocused && styles.inputFocused,
             {
               height: noteHeights[`exercise-${exercise.id}`] ?? 48,
             },
@@ -121,10 +119,9 @@ export const ExerciseSection = memo(function ExerciseSection({
         <SetRow
           key={set.id}
           exercise={exercise}
-          focusedFieldId={focusedFieldId}
           noteHeight={noteHeights[set.id]}
+          onFocusScroll={onFocusScroll}
           onOpenSetOptions={onOpenSetOptions}
-          onSetFocusedFieldId={onSetFocusedFieldId}
           onSetNoteHeight={onSetNoteHeight}
           onUpdateSetField={onUpdateSetField}
           onUpdateSetTimeField={onUpdateSetTimeField}

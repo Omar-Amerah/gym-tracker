@@ -2,6 +2,7 @@ import { useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
+  Dimensions,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -19,20 +20,16 @@ import {
   SecondaryOutlineButton,
 } from "@/components/action-buttons";
 import type { ExerciseRecord } from "@/db/schema";
-import {
-  deleteWorkout,
-  markWorkoutCompleted,
-} from "@/db/workoutsRepository";
+import { deleteWorkout, markWorkoutCompleted } from "@/db/workoutsRepository";
 import {
   registerActiveWorkoutAddExerciseHandler,
   registerActiveWorkoutReplacementHandler,
 } from "@/state/activeWorkoutSelection";
 import { backOrReplace } from "@/utils/navigation";
-import { ExerciseSection } from "./components/ExerciseSection";
 import { ExerciseOptionsSheet } from "./components/ExerciseOptionsSheet";
+import { ExerciseSection } from "./components/ExerciseSection";
 import { ReorderExercisesView } from "./components/ReorderExercisesView";
 import { SetOptionsSheet } from "./components/SetOptionsSheet";
-import { WorkoutDetailsForm } from "./components/WorkoutDetailsForm";
 import { WorkoutDatePickerSheet } from "./components/WorkoutDatePickerSheet";
 import { WorkoutHeader } from "./components/WorkoutHeader";
 import { WorkoutOptionsSheet } from "./components/WorkoutOptionsSheet";
@@ -45,13 +42,10 @@ import type {
   SetField,
   WorkoutField,
 } from "./types";
-import {
-  normaliseExerciseType,
-  parseTimeValue,
-} from "./workoutFieldRules";
+import { usePreviousPerformance } from "./usePreviousPerformance";
 import { useWorkoutAutosave } from "./useWorkoutAutosave";
 import { useWorkoutLoader } from "./useWorkoutLoader";
-import { usePreviousPerformance } from "./usePreviousPerformance";
+import { normaliseExerciseType, parseTimeValue } from "./workoutFieldRules";
 import {
   buildWorkoutPayload,
   createClearedReplacementSets,
@@ -90,6 +84,8 @@ export function WorkoutEditorScreen() {
   const [isReorderingExercises, setIsReorderingExercises] = useState(false);
   const [noteHeights, setNoteHeights] = useState<Record<string, number>>({});
   const exerciseNoteRefs = useRef<Record<string, TextInput | null>>({});
+  const scrollViewRef = useRef<ScrollView | null>(null);
+  const scrollYRef = useRef(0);
   const isDeletingWorkoutRef = useRef(false);
   const isFinishingWorkoutRef = useRef(false);
   const { previousPerformance } = usePreviousPerformance(workout);
@@ -163,76 +159,81 @@ export function WorkoutEditorScreen() {
     );
   }, [editorKey]);
 
-  const updateWorkoutField = useCallback((field: WorkoutField, value: string) => {
-    setWorkout((current) =>
-      current ? { ...current, [field]: value } : current,
-    );
-  }, []);
+  const updateWorkoutField = useCallback(
+    (field: WorkoutField, value: string) => {
+      setWorkout((current) =>
+        current ? { ...current, [field]: value } : current,
+      );
+    },
+    [],
+  );
 
-  const updateSetField = useCallback((
-    exerciseId: string,
-    setId: string,
-    field: SetField,
-    value: string,
-  ) => {
-    setWorkout((current) => {
-      if (!current) return current;
+  const updateSetField = useCallback(
+    (exerciseId: string, setId: string, field: SetField, value: string) => {
+      setWorkout((current) => {
+        if (!current) return current;
 
-      return {
-        ...current,
-        exercises: current.exercises.map((exercise) =>
-          exercise.id === exerciseId
-            ? {
-                ...exercise,
-                sets: exercise.sets.map((set) =>
-                  set.id === setId ? { ...set, [field]: value } : set,
-                ),
-              }
-            : exercise,
-        ),
-      };
-    });
-  }, []);
+        return {
+          ...current,
+          exercises: current.exercises.map((exercise) =>
+            exercise.id === exerciseId
+              ? {
+                  ...exercise,
+                  sets: exercise.sets.map((set) =>
+                    set.id === setId ? { ...set, [field]: value } : set,
+                  ),
+                }
+              : exercise,
+          ),
+        };
+      });
+    },
+    [],
+  );
 
-  const updateSetTimeField = useCallback((
-    exerciseId: string,
-    setId: string,
-    value: string,
-  ) => {
-    const { minutes, seconds } = parseTimeValue(value);
-    setWorkout((current) => {
-      if (!current) return current;
+  const updateSetTimeField = useCallback(
+    (exerciseId: string, setId: string, value: string) => {
+      const { minutes, seconds } = parseTimeValue(value);
+      setWorkout((current) => {
+        if (!current) return current;
 
-      return {
-        ...current,
-        exercises: current.exercises.map((exercise) =>
-          exercise.id === exerciseId
-            ? {
-                ...exercise,
-                sets: exercise.sets.map((set) =>
-                  set.id === setId
-                    ? { ...set, minutes, seconds, time: value }
-                    : set,
-                ),
-              }
-            : exercise,
-        ),
-      };
-    });
-  }, []);
+        return {
+          ...current,
+          exercises: current.exercises.map((exercise) =>
+            exercise.id === exerciseId
+              ? {
+                  ...exercise,
+                  sets: exercise.sets.map((set) =>
+                    set.id === setId
+                      ? { ...set, minutes, seconds, time: value }
+                      : set,
+                  ),
+                }
+              : exercise,
+          ),
+        };
+      });
+    },
+    [],
+  );
 
-  const updateExerciseNote = useCallback((exerciseId: string, value: string) => {
-    setWorkout((current) => {
-      if (!current) return current;
+  const updateExerciseNote = useCallback(
+    (exerciseId: string, value: string) => {
+      setWorkout((current) => {
+        if (!current) return current;
 
-      return {
-        ...current,
-        exercises: current.exercises.map((exercise) =>
-          exercise.id === exerciseId ? { ...exercise, notes: value } : exercise,
-        ),
-      };
-    });
-  }, []);
+        return {
+          ...current,
+          exercises: current.exercises.map((exercise) =>
+            exercise.id === exerciseId
+              ? { ...exercise, notes: value }
+              : exercise,
+          ),
+        };
+      });
+    },
+    [],
+  );
 
   const toggleExerciseStar = useCallback((exerciseId: string) => {
     setWorkout((current) => {
@@ -408,16 +409,19 @@ export function WorkoutEditorScreen() {
     setDatePickerOpen(true);
   }, [workout]);
 
-  const selectCalendarDay = useCallback((day: number) => {
-    const selectedDate = new Date(
-      calendarMonth.getFullYear(),
-      calendarMonth.getMonth(),
-      day,
-    );
-    updateWorkoutField("date", formatDateField(selectedDate));
-    setDatePickerOpen(false);
-    setFocusedFieldId(null);
-  }, [calendarMonth, updateWorkoutField]);
+  const selectCalendarDay = useCallback(
+    (day: number) => {
+      const selectedDate = new Date(
+        calendarMonth.getFullYear(),
+        calendarMonth.getMonth(),
+        day,
+      );
+      updateWorkoutField("date", formatDateField(selectedDate));
+      setDatePickerOpen(false);
+      setFocusedFieldId(null);
+    },
+    [calendarMonth, updateWorkoutField],
+  );
 
   const moveCalendarMonth = useCallback((direction: -1 | 1) => {
     setCalendarMonth(
@@ -426,38 +430,49 @@ export function WorkoutEditorScreen() {
     );
   }, []);
 
-  const updateSelectedTime = useCallback((part: "hour" | "minute", value: string) => {
-    if (!timePickerTarget || !workout) return;
+  const updateSelectedTime = useCallback(
+    (part: "hour" | "minute", value: string) => {
+      if (!timePickerTarget || !workout) return;
 
-    const currentTime =
-      workout[timePickerTarget] || formatTimeField(new Date());
-    const parsed = parseTimeField(currentTime);
-    const nextTime =
-      part === "hour" ? `${value}:${parsed.minute}` : `${parsed.hour}:${value}`;
+      const currentTime =
+        workout[timePickerTarget] || formatTimeField(new Date());
+      const parsed = parseTimeField(currentTime);
+      const nextTime =
+        part === "hour"
+          ? `${value}:${parsed.minute}`
+          : `${parsed.hour}:${value}`;
 
-    updateWorkoutField(timePickerTarget, nextTime);
-  }, [timePickerTarget, updateWorkoutField, workout]);
+      updateWorkoutField(timePickerTarget, nextTime);
+    },
+    [timePickerTarget, updateWorkoutField, workout],
+  );
 
-  const moveExerciseToIndex = useCallback((exerciseId: string, targetIndex: number) => {
-    setWorkout((current) => {
-      if (!current) return current;
+  const moveExerciseToIndex = useCallback(
+    (exerciseId: string, targetIndex: number) => {
+      setWorkout((current) => {
+        if (!current) return current;
 
-      const currentIndex = current.exercises.findIndex(
-        (exercise) => exercise.id === exerciseId,
-      );
-      if (currentIndex < 0) return current;
+        const currentIndex = current.exercises.findIndex(
+          (exercise) => exercise.id === exerciseId,
+        );
+        if (currentIndex < 0) return current;
 
-      const exercises = [...current.exercises];
-      const [exercise] = exercises.splice(currentIndex, 1);
-      const boundedIndex = Math.max(0, Math.min(targetIndex, exercises.length));
-      exercises.splice(boundedIndex, 0, exercise);
+        const exercises = [...current.exercises];
+        const [exercise] = exercises.splice(currentIndex, 1);
+        const boundedIndex = Math.max(
+          0,
+          Math.min(targetIndex, exercises.length),
+        );
+        exercises.splice(boundedIndex, 0, exercise);
 
-      return {
-        ...current,
-        exercises,
-      };
-    });
-  }, []);
+        return {
+          ...current,
+          exercises,
+        };
+      });
+    },
+    [],
+  );
 
   const deleteExerciseFromWorkout = (exerciseId: string) => {
     const exercise = workout?.exercises.find((item) => item.id === exerciseId);
@@ -563,23 +578,90 @@ export function WorkoutEditorScreen() {
   const showFutureActionAlert = useCallback((message: string) => {
     Alert.alert("Coming soon", message);
   }, []);
+  const getSetNoteHeight = useCallback((contentHeight: number) => {
+    const DEFAULT_HEIGHT = 38;
+    const MAX_HEIGHT = 120;
+    const ONE_LINE_THRESHOLD = 50;
 
+    if (contentHeight <= ONE_LINE_THRESHOLD) {
+      return DEFAULT_HEIGHT;
+    }
+
+    return Math.max(DEFAULT_HEIGHT, Math.min(MAX_HEIGHT, contentHeight));
+  }, []);
+
+  const getExerciseNoteHeight = useCallback((contentHeight: number) => {
+    const DEFAULT_HEIGHT = 48;
+    const MAX_HEIGHT = 150;
+    const ONE_LINE_THRESHOLD = 62;
+
+    if (contentHeight <= ONE_LINE_THRESHOLD) {
+      return DEFAULT_HEIGHT;
+    }
+
+    return Math.max(DEFAULT_HEIGHT, Math.min(MAX_HEIGHT, contentHeight));
+  }, []);
+
+  const scrollFocusedInputIntoView = useCallback(
+    (_fieldId: string, inputRef: TextInput | null) => {
+      if (!inputRef) return;
+
+      const scrollToInput = () => {
+        inputRef.measureInWindow((_x, y, _width, height) => {
+          const windowHeight = Dimensions.get("window").height;
+
+          // Approximate Android keyboard area. This does not need exact keyboard height;
+          // it just keeps the focused box comfortably above the keyboard.
+          const keyboardReserve = Platform.OS === "android" ? 330 : 260;
+          const visibleBottom = windowHeight - keyboardReserve;
+          const visibleTop = insets.top + 72;
+          const margin = 24;
+
+          const inputBottom = y + height;
+          let nextScrollY: number | null = null;
+
+          if (inputBottom > visibleBottom - margin) {
+            nextScrollY =
+              scrollYRef.current + inputBottom - visibleBottom + margin;
+          } else if (y < visibleTop + margin) {
+            nextScrollY = scrollYRef.current - (visibleTop + margin - y);
+          }
+
+          if (nextScrollY !== null) {
+            scrollViewRef.current?.scrollTo({
+              y: Math.max(0, nextScrollY),
+              animated: true,
+            });
+          }
+        });
+      };
+
+      requestAnimationFrame(scrollToInput);
+
+      // Android often reports a better position just after keyboard begins opening.
+      setTimeout(scrollToInput, 90);
+    },
+    [insets.top],
+  );
   const updateExerciseNoteHeight = useCallback(
     (exerciseId: string, height: number) => {
       setNoteHeights((current) => ({
         ...current,
-        [`exercise-${exerciseId}`]: Math.max(48, Math.min(150, height)),
+        [`exercise-${exerciseId}`]: getExerciseNoteHeight(height),
       }));
     },
-    [],
+    [getExerciseNoteHeight],
   );
 
-  const updateSetNoteHeight = useCallback((setId: string, height: number) => {
-    setNoteHeights((current) => ({
-      ...current,
-      [setId]: Math.max(38, Math.min(120, height)),
-    }));
-  }, []);
+  const updateSetNoteHeight = useCallback(
+    (setId: string, height: number) => {
+      setNoteHeights((current) => ({
+        ...current,
+        [setId]: getSetNoteHeight(height),
+      }));
+    },
+    [getSetNoteHeight],
+  );
 
   const openSetOptions = useCallback((exerciseId: string, setId: string) => {
     setSelectedSet({ exerciseId, setId });
@@ -644,23 +726,19 @@ export function WorkoutEditorScreen() {
         />
 
         <ScrollView
+          ref={scrollViewRef}
           contentContainerStyle={[
             styles.content,
             { paddingBottom: 120 + insets.bottom },
           ]}
           keyboardDismissMode="on-drag"
           keyboardShouldPersistTaps="handled"
+          onScroll={(event) => {
+            scrollYRef.current = event.nativeEvent.contentOffset.y;
+          }}
+          scrollEventThrottle={16}
           showsVerticalScrollIndicator={false}
         >
-          <WorkoutDetailsForm
-            focusedFieldId={focusedFieldId}
-            onOpenDatePicker={openDatePicker}
-            setFocusedFieldId={setFocusedFieldId}
-            setTimePickerTarget={setTimePickerTarget}
-            updateWorkoutField={updateWorkoutField}
-            workout={workout}
-          />
-
           <View style={styles.exerciseList}>
             {workout.exercises.length === 0 ? (
               <View style={styles.emptyWorkoutState}>
@@ -678,13 +756,12 @@ export function WorkoutEditorScreen() {
                 key={exercise.id}
                 exercise={exercise}
                 exerciseNoteTargetId={exerciseNoteTargetId}
-                focusedFieldId={focusedFieldId}
+                onFocusScroll={scrollFocusedInputIntoView}
                 noteHeights={noteHeights}
                 onAddSet={addSetToExercise}
                 onExerciseNoteHeight={updateExerciseNoteHeight}
                 onOpenExerciseOptions={setSelectedExerciseId}
                 onOpenSetOptions={openSetOptions}
-                onSetFocusedFieldId={setFocusedFieldId}
                 onSetNoteHeight={updateSetNoteHeight}
                 onShowFutureAction={showFutureActionAlert}
                 onToggleExerciseStar={toggleExerciseStar}
@@ -791,4 +868,3 @@ export function WorkoutEditorScreen() {
     </SafeAreaView>
   );
 }
-
