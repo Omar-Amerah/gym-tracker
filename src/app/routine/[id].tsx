@@ -312,22 +312,6 @@ export default function RoutineDetailScreen() {
             accessibilityRole="button"
             onPress={() => {
               setRoutineMenuOpen(false);
-              // Since the Name/Notes fields are already editable inline, Edit just closes the sheet
-            }}
-            style={styles.sheetAction}
-          >
-            <MaterialCommunityIcons
-              color={colors.textPrimary}
-              name="pencil-outline"
-              size={24}
-              style={styles.sheetIcon}
-            />
-            <Text style={styles.sheetText}>Edit</Text>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => {
-              setRoutineMenuOpen(false);
               // FIXED: Added the router.push here!
               router.push({
                 pathname: "/routine/[id]/reorder",
@@ -676,5 +660,3 @@ const styles = StyleSheet.create({
     width: 36,
   },
 });
-
-

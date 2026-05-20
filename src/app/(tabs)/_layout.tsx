@@ -1,16 +1,16 @@
-import { Tabs } from 'expo-router';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Tabs } from "expo-router";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { TabIcon, type TabName } from '@/components/tab-icons';
-import { colors } from '@/theme/colors';
-import { spacing } from '@/theme/spacing';
-import { typography } from '@/theme/typography';
+import { TabIcon, type TabName } from "@/components/tab-icons";
+import { colors } from "@/theme/colors";
+import { spacing } from "@/theme/spacing";
+import { typography } from "@/theme/typography";
 
 const tabItems: { label: TabName; routeName: string }[] = [
-  { label: 'Log', routeName: 'index' },
-  { label: 'Routines', routeName: 'routines' },
-  { label: 'Statistics', routeName: 'statistics' },
+  { label: "Log", routeName: "index" },
+  { label: "Routines", routeName: "routines" },
+  { label: "Statistics", routeName: "statistics" },
 ];
 
 export default function TabsLayout() {
@@ -19,7 +19,7 @@ export default function TabsLayout() {
   return (
     <Tabs
       screenOptions={{
-        animation: 'none',
+        animation: "none",
         headerShown: false,
         sceneStyle: { backgroundColor: colors.background },
       }}
@@ -27,9 +27,16 @@ export default function TabsLayout() {
         <View style={styles.sceneContainer}>{children}</View>
       )}
       tabBar={({ state, navigation }) => (
-        <View style={[styles.tabBar, { height: 72 + insets.bottom, paddingBottom: insets.bottom }]}>
+        <View
+          style={[
+            styles.tabBar,
+            { height: 72 + insets.bottom, paddingBottom: insets.bottom },
+          ]}
+        >
           {tabItems.map((item) => {
-            const routeIndex = state.routes.findIndex((route) => route.name === item.routeName);
+            const routeIndex = state.routes.findIndex(
+              (route) => route.name === item.routeName,
+            );
             const selected = state.index === routeIndex;
 
             return (
@@ -38,29 +45,35 @@ export default function TabsLayout() {
                 accessibilityState={{ selected }}
                 key={item.routeName}
                 onPress={() => navigation.navigate(item.routeName)}
-                style={styles.tab}>
+                style={styles.tab}
+              >
                 <TabIcon name={item.label} selected={selected} />
-                <Text style={[styles.tabText, selected && styles.tabTextSelected]}>{item.label}</Text>
+                <Text
+                  style={[styles.tabText, selected && styles.tabTextSelected]}
+                >
+                  {item.label}
+                </Text>
               </Pressable>
             );
           })}
         </View>
-      )}>
-      <Tabs.Screen name="index" options={{ title: 'Log' }} />
-      <Tabs.Screen name="routines" options={{ title: 'Routines' }} />
-      <Tabs.Screen name="statistics" options={{ title: 'Statistics' }} />
+      )}
+    >
+      <Tabs.Screen name="index" options={{ title: "Log" }} />
+      <Tabs.Screen name="routines" options={{ title: "Routines" }} />
+      <Tabs.Screen name="statistics" options={{ title: "Statistics" }} />
     </Tabs>
   );
 }
 
 const styles = StyleSheet.create({
   tabBar: {
-    alignItems: 'center',
+    alignItems: "center",
     backgroundColor: colors.tabBar,
     borderColor: colors.borderMuted,
     borderTopWidth: 1,
-    flexDirection: 'row',
-    justifyContent: 'space-around',
+    flexDirection: "row",
+    justifyContent: "space-around",
     paddingHorizontal: spacing.md,
   },
   sceneContainer: {
@@ -68,11 +81,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   tab: {
-    alignItems: 'center',
+    alignItems: "center",
     flex: 1,
     gap: spacing.sm,
     height: 55,
-    justifyContent: 'center',
+    justifyContent: "center",
   },
   tabText: {
     color: colors.textSecondary,

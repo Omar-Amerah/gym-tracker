@@ -152,40 +152,6 @@ export default function RoutinesScreen() {
             />
             <Text style={styles.sheetText}>Reorder</Text>
           </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => {
-              if (routines[0]) duplicateRoutine(routines[0].id);
-              setMenuOpen(false);
-            }}
-            style={styles.sheetAction}
-          >
-            <MaterialCommunityIcons
-              color={colors.textPrimary}
-              name="content-copy"
-              size={22}
-              style={styles.sheetIcon}
-            />
-            <Text style={styles.sheetText}>Copy</Text>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => {
-              if (routines[0]) {
-                confirmDeleteRoutine(routines[0].id, routines[0].name);
-              }
-              setMenuOpen(false);
-            }}
-            style={styles.sheetAction}
-          >
-            <MaterialCommunityIcons
-              color="#ffaaa1"
-              name="trash-can-outline"
-              size={24}
-              style={styles.sheetIcon}
-            />
-            <Text style={[styles.sheetText, styles.deleteText]}>Delete</Text>
-          </Pressable>
         </BottomSheet>
 
         {/* Selected Routine Options Bottom Sheet */}
