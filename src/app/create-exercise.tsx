@@ -2,8 +2,6 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useLocalSearchParams } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
-  Animated,
-  Modal,
   PanResponder,
   Pressable,
   ScrollView,
@@ -12,13 +10,11 @@ import {
   TextInput,
   View,
 } from "react-native";
-import {
-  SafeAreaView,
-  useSafeAreaInsets,
-} from "react-native-safe-area-context";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import { PrimaryPillButton } from "@/components/action-buttons";
 import { AppHeader } from "@/components/app-header";
+import { BottomSheet } from "@/components/bottom-sheet";
 import {
   createCategory,
   listCategories,
@@ -51,74 +47,7 @@ const THUMB_SIZE = 22;
 
 type PickerType = "category" | "type" | "arm" | null;
 
-function BottomSheet({
-  children,
-  insetsBottom,
-  onClose,
-  visible,
-}: {
-  children: React.ReactNode;
-  insetsBottom: number;
-  onClose: () => void;
-  visible: boolean;
-}) {
-  const [showModal, setShowModal] = useState(visible);
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    if (visible) {
-      setShowModal(true);
-      fadeAnim.setValue(0);
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 120,
-        useNativeDriver: true,
-      }).start();
-      return;
-    }
-
-    Animated.timing(fadeAnim, {
-      toValue: 0,
-      duration: 120,
-      useNativeDriver: true,
-    }).start(() => {
-      setShowModal(false);
-    });
-  }, [visible, fadeAnim]);
-
-  if (!showModal) return null;
-
-  return (
-    <Modal
-      animationType="none"
-      onRequestClose={onClose}
-      transparent
-      visible={showModal}
-    >
-      <Animated.View style={[styles.sheetContainer, { opacity: fadeAnim }]}>
-        <View style={styles.scrimOverlay} />
-        <Pressable
-          accessibilityLabel="Close menu"
-          onPress={onClose}
-          style={StyleSheet.absoluteFillObject}
-        />
-        <View
-          style={[
-            styles.sheet,
-            {
-              paddingBottom: 34 + insetsBottom,
-            },
-          ]}
-        >
-          {children}
-        </View>
-      </Animated.View>
-    </Modal>
-  );
-}
-
 export default function CreateExerciseScreen() {
-  const insets = useSafeAreaInsets();
   const { category: initialCategory } = useLocalSearchParams<{
     category?: string;
   }>();
@@ -385,7 +314,6 @@ export default function CreateExerciseScreen() {
         </ScrollView>
 
         <BottomSheet
-          insetsBottom={insets.bottom}
           onClose={() => setActivePicker(null)}
           visible={activePicker !== null}
         >
@@ -601,22 +529,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 11,
   },
-  sheetContainer: {
-    flex: 1,
-    justifyContent: "flex-end",
-  },
-  scrimOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0, 0, 0, 0.4)",
-  },
-  sheet: {
-    backgroundColor: "#06100f",
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    gap: 18,
-    paddingHorizontal: 34,
-    paddingTop: 36,
-  },
   sheetTitle: {
     color: colors.textPrimary,
     fontSize: 22,
@@ -646,3 +558,5 @@ const styles = StyleSheet.create({
     opacity: 0.72,
   },
 });
+
+

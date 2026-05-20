@@ -1,9 +1,7 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useState } from "react";
 import {
-  Animated,
-  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -17,6 +15,7 @@ import {
 } from "react-native-safe-area-context";
 
 import { AppHeader } from "@/components/app-header";
+import { BottomSheet } from "@/components/bottom-sheet";
 import { listExercisesByCategory } from "@/db/exercisesRepository";
 import type { ExerciseRecord } from "@/db/schema";
 import {
@@ -27,83 +26,6 @@ import { useRoutines } from "@/state/routines";
 import { colors } from "@/theme/colors";
 import { spacing } from "@/theme/spacing";
 import { backOrReplace } from "@/utils/navigation";
-
-// --- REUSABLE BOTTOM SHEET ---
-function BottomSheet({
-  children,
-  insetsBottom,
-  onClose,
-  visible,
-}: {
-  children: React.ReactNode;
-  insetsBottom: number;
-  onClose: () => void;
-  visible: boolean;
-}) {
-  const [showModal, setShowModal] = useState(visible);
-  const translateY = useRef(new Animated.Value(400)).current;
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    if (visible) {
-      setShowModal(true);
-      Animated.parallel([
-        Animated.spring(translateY, {
-          toValue: 0,
-          useNativeDriver: true,
-          bounciness: 0,
-          speed: 14,
-        }),
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 200,
-          useNativeDriver: true,
-        }),
-      ]).start();
-    } else {
-      Animated.parallel([
-        Animated.timing(translateY, {
-          toValue: 400,
-          duration: 250,
-          useNativeDriver: true,
-        }),
-        Animated.timing(fadeAnim, {
-          toValue: 0,
-          duration: 250,
-          useNativeDriver: true,
-        }),
-      ]).start(() => setShowModal(false));
-    }
-  }, [visible, translateY, fadeAnim]);
-
-  if (!showModal) return null;
-
-  return (
-    <Modal
-      animationType="none"
-      onRequestClose={onClose}
-      transparent
-      visible={showModal}
-    >
-      <View style={styles.sheetContainer}>
-        <Animated.View style={[styles.scrimOverlay, { opacity: fadeAnim }]} />
-        <Pressable
-          accessibilityLabel="Close menu"
-          onPress={onClose}
-          style={StyleSheet.absoluteFillObject}
-        />
-        <Animated.View
-          style={[
-            styles.sheet,
-            { paddingBottom: 34 + insetsBottom, transform: [{ translateY }] },
-          ]}
-        >
-          {children}
-        </Animated.View>
-      </View>
-    </Modal>
-  );
-}
 
 export default function CategoryExercisesScreen() {
   const router = useRouter();
@@ -354,7 +276,6 @@ export default function CategoryExercisesScreen() {
 
         {/* OPTIONS SHEET */}
         <BottomSheet
-          insetsBottom={insets.bottom}
           onClose={() => setOptionsExerciseId(null)}
           visible={optionsExerciseId !== null}
         >
@@ -455,19 +376,6 @@ const styles = StyleSheet.create({
   toggleBtnActive: { backgroundColor: colors.fabBackground },
   toggleText: { fontSize: 15, fontWeight: "600", color: colors.textSecondary },
   toggleTextActive: { color: colors.background },
-  sheetContainer: { flex: 1, justifyContent: "flex-end" },
-  scrimOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0, 0, 0, 0.4)",
-  },
-  sheet: {
-    backgroundColor: "#06100f",
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    paddingHorizontal: 24,
-    paddingTop: 32,
-    gap: 8,
-  },
   sheetAction: {
     alignItems: "center",
     flexDirection: "row",
@@ -477,3 +385,5 @@ const styles = StyleSheet.create({
   sheetIcon: { width: 34 },
   sheetText: { color: colors.textPrimary, fontSize: 17, fontWeight: "500" },
 });
+
+

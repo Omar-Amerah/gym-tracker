@@ -1,0 +1,794 @@
+import { useRouter } from "expo-router";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
+
+import {
+  PrimaryPillButton,
+  SecondaryOutlineButton,
+} from "@/components/action-buttons";
+import type { ExerciseRecord } from "@/db/schema";
+import {
+  deleteWorkout,
+  markWorkoutCompleted,
+} from "@/db/workoutsRepository";
+import {
+  registerActiveWorkoutAddExerciseHandler,
+  registerActiveWorkoutReplacementHandler,
+} from "@/state/activeWorkoutSelection";
+import { backOrReplace } from "@/utils/navigation";
+import { ExerciseSection } from "./components/ExerciseSection";
+import { ExerciseOptionsSheet } from "./components/ExerciseOptionsSheet";
+import { ReorderExercisesView } from "./components/ReorderExercisesView";
+import { SetOptionsSheet } from "./components/SetOptionsSheet";
+import { WorkoutDetailsForm } from "./components/WorkoutDetailsForm";
+import { WorkoutDatePickerSheet } from "./components/WorkoutDatePickerSheet";
+import { WorkoutHeader } from "./components/WorkoutHeader";
+import { WorkoutOptionsSheet } from "./components/WorkoutOptionsSheet";
+import { WorkoutTimePickerSheet } from "./components/WorkoutTimePickerSheet";
+import { styles } from "./styles";
+import type {
+  ActiveWorkout,
+  ActiveWorkoutSet,
+  SelectedSet,
+  SetField,
+  WorkoutField,
+} from "./types";
+import {
+  normaliseExerciseType,
+  parseTimeValue,
+} from "./workoutFieldRules";
+import { useWorkoutAutosave } from "./useWorkoutAutosave";
+import { useWorkoutLoader } from "./useWorkoutLoader";
+import { usePreviousPerformance } from "./usePreviousPerformance";
+import {
+  buildWorkoutPayload,
+  createClearedReplacementSets,
+  createDefaultExerciseFromRecord,
+  createId,
+  formatDateField,
+  formatDisplayDate,
+  formatTimeField,
+  parseDateField,
+  parseTimeField,
+} from "./workoutUtils";
+
+export function WorkoutEditorScreen() {
+  const insets = useSafeAreaInsets();
+  const router = useRouter();
+
+  const [workout, setWorkout] = useState<ActiveWorkout | null>(null);
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
+  const [isSavingWorkout, setIsSavingWorkout] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState(() => new Date());
+  const [timePickerTarget, setTimePickerTarget] = useState<
+    "startTime" | "endTime" | null
+  >(null);
+  const [focusedFieldId, setFocusedFieldId] = useState<string | null>(null);
+  const [workoutMenuOpen, setWorkoutMenuOpen] = useState(false);
+  const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(
+    null,
+  );
+  const [replacementExerciseId, setReplacementExerciseId] = useState<
+    string | null
+  >(null);
+  const [selectedSet, setSelectedSet] = useState<SelectedSet>(null);
+  const [exerciseNoteTargetId, setExerciseNoteTargetId] = useState<
+    string | null
+  >(null);
+  const [isReorderingExercises, setIsReorderingExercises] = useState(false);
+  const [noteHeights, setNoteHeights] = useState<Record<string, number>>({});
+  const exerciseNoteRefs = useRef<Record<string, TextInput | null>>({});
+  const isDeletingWorkoutRef = useRef(false);
+  const isFinishingWorkoutRef = useRef(false);
+  const { previousPerformance } = usePreviousPerformance(workout);
+  const {
+    autosaveStatus,
+    cancelPendingAutosave,
+    markPayloadAsSaved,
+    markWorkoutAsSaved,
+    setAutosaveStatus,
+    waitForPendingAutosave,
+  } = useWorkoutAutosave({
+    isDeletingWorkoutRef,
+    isFinishingWorkoutRef,
+    workout,
+  });
+  const { editorKey, isLoadingWorkout } = useWorkoutLoader({
+    markWorkoutAsSaved,
+    setAutosaveStatus,
+    setWorkout,
+  });
+
+  useEffect(() => {
+    return registerActiveWorkoutReplacementHandler(
+      editorKey,
+      (exercise: ExerciseRecord) => {
+        setWorkout((current) => {
+          if (!current || !replacementExerciseId) return current;
+
+          return {
+            ...current,
+            exercises: current.exercises.map((workoutExercise) =>
+              workoutExercise.id === replacementExerciseId
+                ? {
+                    ...workoutExercise,
+                    exerciseId: exercise.id,
+                    exerciseType: normaliseExerciseType(exercise.exerciseType),
+                    name: exercise.name,
+                    notes: "",
+                    isStarred: false,
+                    sets: createClearedReplacementSets(
+                      workoutExercise,
+                      exercise.id,
+                    ),
+                  }
+                : workoutExercise,
+            ),
+          };
+        });
+        setReplacementExerciseId(null);
+        setSelectedExerciseId(null);
+      },
+    );
+  }, [editorKey, replacementExerciseId]);
+
+  useEffect(() => {
+    return registerActiveWorkoutAddExerciseHandler(
+      editorKey,
+      (exercise: ExerciseRecord) => {
+        setWorkout((current) => {
+          if (!current) return current;
+
+          return {
+            ...current,
+            exercises: [
+              ...current.exercises,
+              createDefaultExerciseFromRecord(exercise),
+            ],
+          };
+        });
+      },
+    );
+  }, [editorKey]);
+
+  const updateWorkoutField = useCallback((field: WorkoutField, value: string) => {
+    setWorkout((current) =>
+      current ? { ...current, [field]: value } : current,
+    );
+  }, []);
+
+  const updateSetField = useCallback((
+    exerciseId: string,
+    setId: string,
+    field: SetField,
+    value: string,
+  ) => {
+    setWorkout((current) => {
+      if (!current) return current;
+
+      return {
+        ...current,
+        exercises: current.exercises.map((exercise) =>
+          exercise.id === exerciseId
+            ? {
+                ...exercise,
+                sets: exercise.sets.map((set) =>
+                  set.id === setId ? { ...set, [field]: value } : set,
+                ),
+              }
+            : exercise,
+        ),
+      };
+    });
+  }, []);
+
+  const updateSetTimeField = useCallback((
+    exerciseId: string,
+    setId: string,
+    value: string,
+  ) => {
+    const { minutes, seconds } = parseTimeValue(value);
+    setWorkout((current) => {
+      if (!current) return current;
+
+      return {
+        ...current,
+        exercises: current.exercises.map((exercise) =>
+          exercise.id === exerciseId
+            ? {
+                ...exercise,
+                sets: exercise.sets.map((set) =>
+                  set.id === setId
+                    ? { ...set, minutes, seconds, time: value }
+                    : set,
+                ),
+              }
+            : exercise,
+        ),
+      };
+    });
+  }, []);
+
+  const updateExerciseNote = useCallback((exerciseId: string, value: string) => {
+    setWorkout((current) => {
+      if (!current) return current;
+
+      return {
+        ...current,
+        exercises: current.exercises.map((exercise) =>
+          exercise.id === exerciseId ? { ...exercise, notes: value } : exercise,
+        ),
+      };
+    });
+  }, []);
+
+  const toggleExerciseStar = useCallback((exerciseId: string) => {
+    setWorkout((current) => {
+      if (!current) return current;
+
+      return {
+        ...current,
+        exercises: current.exercises.map((exercise) =>
+          exercise.id === exerciseId
+            ? { ...exercise, isStarred: !exercise.isStarred }
+            : exercise,
+        ),
+      };
+    });
+  }, []);
+
+  const addSetToExercise = useCallback((exerciseId: string) => {
+    setWorkout((current) => {
+      if (!current) return current;
+
+      return {
+        ...current,
+        exercises: current.exercises.map((exercise) => {
+          if (exercise.id !== exerciseId) return exercise;
+
+          return {
+            ...exercise,
+            sets: [
+              ...exercise.sets,
+              {
+                distance: "",
+                id: createId(`${exercise.routineExerciseId}-set`),
+                type: "normal",
+                kg: "",
+                reps: "",
+                minutes: "",
+                seconds: "",
+                time: "",
+                notes: "",
+              },
+            ],
+          };
+        }),
+      };
+    });
+  }, []);
+
+  const removeSetFromExercise = (exerciseId: string, setId: string) => {
+    setWorkout((current) => {
+      if (!current) return current;
+
+      return {
+        ...current,
+        exercises: current.exercises.map((exercise) => {
+          if (exercise.id !== exerciseId) return exercise;
+
+          return {
+            ...exercise,
+            sets: exercise.sets.filter((set) => set.id !== setId),
+          };
+        }),
+      };
+    });
+  };
+
+  const confirmRemoveSetFromExercise = (exerciseId: string, setId: string) => {
+    setSelectedSet(null);
+    Alert.alert("Delete set?", "This will remove this set from the workout.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: () => removeSetFromExercise(exerciseId, setId),
+      },
+    ]);
+  };
+
+  const updateSetType = (
+    exerciseId: string,
+    setId: string,
+    type: ActiveWorkoutSet["type"],
+  ) => {
+    setWorkout((current) => {
+      if (!current) return current;
+
+      return {
+        ...current,
+        exercises: current.exercises.map((exercise) =>
+          exercise.id === exerciseId
+            ? {
+                ...exercise,
+                sets: exercise.sets.map((set) =>
+                  set.id === setId ? { ...set, type } : set,
+                ),
+              }
+            : exercise,
+        ),
+      };
+    });
+  };
+
+  const copySetOnce = (exerciseId: string, setId: string) => {
+    setWorkout((current) => {
+      if (!current) return current;
+
+      return {
+        ...current,
+        exercises: current.exercises.map((exercise) => {
+          if (exercise.id !== exerciseId) return exercise;
+
+          const setIndex = exercise.sets.findIndex((set) => set.id === setId);
+          if (setIndex < 0) return exercise;
+
+          const setToCopy = exercise.sets[setIndex];
+          const nextSets = [...exercise.sets];
+          nextSets.splice(setIndex + 1, 0, {
+            ...setToCopy,
+            id: createId(`${exercise.routineExerciseId}-copy`),
+          });
+          return { ...exercise, sets: nextSets };
+        }),
+      };
+    });
+  };
+
+  const saveFinishedWorkout = async (
+    candidate: ActiveWorkout,
+    { navigateAfterSave = true } = {},
+  ) => {
+    if (isSavingWorkout || !candidate.id) return;
+
+    isFinishingWorkoutRef.current = true;
+    cancelPendingAutosave();
+    setIsSavingWorkout(true);
+    try {
+      await waitForPendingAutosave();
+      const payload = buildWorkoutPayload(candidate);
+      const completedPayload = {
+        ...payload,
+        status: "completed",
+      } as const;
+      await markWorkoutCompleted(candidate.id, completedPayload);
+      markPayloadAsSaved(completedPayload);
+      if (navigateAfterSave) router.replace("/");
+    } catch (error) {
+      console.error("Failed to save workout", error);
+      Alert.alert(
+        "Could not save workout",
+        "Something went wrong while saving this workout. Please try again.",
+      );
+    } finally {
+      isFinishingWorkoutRef.current = false;
+      setIsSavingWorkout(false);
+    }
+  };
+
+  const finishWorkout = () => {
+    if (!workout || isSavingWorkout) return;
+
+    const completedWorkout = {
+      ...workout,
+      status: "completed" as const,
+      endTime: workout.endTime || formatTimeField(new Date()),
+    };
+    isFinishingWorkoutRef.current = true;
+    setWorkout(completedWorkout);
+    void saveFinishedWorkout(completedWorkout);
+  };
+
+  const openDatePicker = useCallback(() => {
+    if (!workout) return;
+    setCalendarMonth(parseDateField(workout.date));
+    setDatePickerOpen(true);
+  }, [workout]);
+
+  const selectCalendarDay = useCallback((day: number) => {
+    const selectedDate = new Date(
+      calendarMonth.getFullYear(),
+      calendarMonth.getMonth(),
+      day,
+    );
+    updateWorkoutField("date", formatDateField(selectedDate));
+    setDatePickerOpen(false);
+    setFocusedFieldId(null);
+  }, [calendarMonth, updateWorkoutField]);
+
+  const moveCalendarMonth = useCallback((direction: -1 | 1) => {
+    setCalendarMonth(
+      (current) =>
+        new Date(current.getFullYear(), current.getMonth() + direction, 1),
+    );
+  }, []);
+
+  const updateSelectedTime = useCallback((part: "hour" | "minute", value: string) => {
+    if (!timePickerTarget || !workout) return;
+
+    const currentTime =
+      workout[timePickerTarget] || formatTimeField(new Date());
+    const parsed = parseTimeField(currentTime);
+    const nextTime =
+      part === "hour" ? `${value}:${parsed.minute}` : `${parsed.hour}:${value}`;
+
+    updateWorkoutField(timePickerTarget, nextTime);
+  }, [timePickerTarget, updateWorkoutField, workout]);
+
+  const moveExerciseToIndex = useCallback((exerciseId: string, targetIndex: number) => {
+    setWorkout((current) => {
+      if (!current) return current;
+
+      const currentIndex = current.exercises.findIndex(
+        (exercise) => exercise.id === exerciseId,
+      );
+      if (currentIndex < 0) return current;
+
+      const exercises = [...current.exercises];
+      const [exercise] = exercises.splice(currentIndex, 1);
+      const boundedIndex = Math.max(0, Math.min(targetIndex, exercises.length));
+      exercises.splice(boundedIndex, 0, exercise);
+
+      return {
+        ...current,
+        exercises,
+      };
+    });
+  }, []);
+
+  const deleteExerciseFromWorkout = (exerciseId: string) => {
+    const exercise = workout?.exercises.find((item) => item.id === exerciseId);
+    if (!exercise) return;
+
+    Alert.alert(
+      "Remove exercise?",
+      `This will remove ${exercise.name} and its sets from this workout.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: () => {
+            setWorkout((current) => {
+              if (!current) return current;
+              return {
+                ...current,
+                exercises: current.exercises.filter(
+                  (item) => item.id !== exerciseId,
+                ),
+              };
+            });
+            setSelectedExerciseId(null);
+          },
+        },
+      ],
+    );
+  };
+
+  const openExerciseReorder = useCallback(() => {
+    setWorkoutMenuOpen(false);
+    setSelectedExerciseId(null);
+    setIsReorderingExercises(true);
+  }, []);
+
+  const confirmDeleteWorkout = () => {
+    if (!workout?.id) return;
+
+    const workoutToDelete = workout;
+    const workoutIdToDelete = workout.id;
+
+    setWorkoutMenuOpen(false);
+    Alert.alert(
+      "Delete workout?",
+      "This will permanently delete this workout and all of its sets.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            isDeletingWorkoutRef.current = true;
+            setWorkout(null);
+            void deleteWorkout(workoutIdToDelete)
+              .then(() => {
+                backOrReplace("/routines");
+              })
+              .catch((error) => {
+                console.warn("Failed to delete workout", error);
+                isDeletingWorkoutRef.current = false;
+                setWorkout(workoutToDelete);
+                Alert.alert("Could not delete workout", "Please try again.");
+              });
+          },
+        },
+      ],
+    );
+  };
+
+  const openExerciseReplacement = useCallback(() => {
+    if (!selectedExerciseId) return;
+
+    setReplacementExerciseId(selectedExerciseId);
+    setSelectedExerciseId(null);
+    router.push({
+      pathname: "/select-exercise",
+      params: {
+        activeWorkoutRoutineId: editorKey,
+        mode: "active-workout-replace",
+      },
+    });
+  }, [editorKey, router, selectedExerciseId]);
+
+  const openAddExercise = useCallback(() => {
+    router.push({
+      pathname: "/select-exercise",
+      params: {
+        activeWorkoutRoutineId: editorKey,
+        mode: "active-workout-add",
+      },
+    });
+  }, [editorKey, router]);
+
+  const focusExerciseNote = useCallback((exerciseId: string) => {
+    setExerciseNoteTargetId(exerciseId);
+    setSelectedExerciseId(null);
+    setTimeout(() => {
+      exerciseNoteRefs.current[exerciseId]?.focus();
+    }, 180);
+  }, []);
+
+  const showFutureActionAlert = useCallback((message: string) => {
+    Alert.alert("Coming soon", message);
+  }, []);
+
+  const updateExerciseNoteHeight = useCallback(
+    (exerciseId: string, height: number) => {
+      setNoteHeights((current) => ({
+        ...current,
+        [`exercise-${exerciseId}`]: Math.max(48, Math.min(150, height)),
+      }));
+    },
+    [],
+  );
+
+  const updateSetNoteHeight = useCallback((setId: string, height: number) => {
+    setNoteHeights((current) => ({
+      ...current,
+      [setId]: Math.max(38, Math.min(120, height)),
+    }));
+  }, []);
+
+  const openSetOptions = useCallback((exerciseId: string, setId: string) => {
+    setSelectedSet({ exerciseId, setId });
+  }, []);
+
+  const setExerciseNoteRef = useCallback(
+    (exerciseId: string, ref: TextInput | null) => {
+      exerciseNoteRefs.current[exerciseId] = ref;
+    },
+    [],
+  );
+
+  const selectedExercise = selectedExerciseId
+    ? (workout?.exercises.find(
+        (exercise) => exercise.id === selectedExerciseId,
+      ) ?? null)
+    : null;
+  const selectedSetData = selectedSet
+    ? workout?.exercises
+        .find((exercise) => exercise.id === selectedSet.exerciseId)
+        ?.sets.find((set) => set.id === selectedSet.setId)
+    : null;
+  const selectedDate = workout ? parseDateField(workout.date) : new Date();
+  const headerTitle = formatDisplayDate(selectedDate);
+
+  if (!workout) {
+    return (
+      <SafeAreaView edges={["top", "bottom"]} style={styles.safeArea}>
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyText}>
+            {isLoadingWorkout ? "Loading..." : "Workout not found."}
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (isReorderingExercises) {
+    return (
+      <ReorderExercisesView
+        exercises={workout.exercises}
+        onDone={() => setIsReorderingExercises(false)}
+        onMoveExerciseToIndex={moveExerciseToIndex}
+      />
+    );
+  }
+
+  return (
+    <SafeAreaView edges={["top", "bottom"]} style={styles.safeArea}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={styles.screen}
+      >
+        <WorkoutHeader
+          autosaveStatus={autosaveStatus}
+          isSavingWorkout={isSavingWorkout}
+          onBack={() => backOrReplace("/routines")}
+          onFinish={finishWorkout}
+          onOpenWorkoutMenu={() => setWorkoutMenuOpen(true)}
+          title={headerTitle}
+          workoutStatus={workout.status}
+        />
+
+        <ScrollView
+          contentContainerStyle={[
+            styles.content,
+            { paddingBottom: 120 + insets.bottom },
+          ]}
+          keyboardDismissMode="on-drag"
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <WorkoutDetailsForm
+            focusedFieldId={focusedFieldId}
+            onOpenDatePicker={openDatePicker}
+            setFocusedFieldId={setFocusedFieldId}
+            setTimePickerTarget={setTimePickerTarget}
+            updateWorkoutField={updateWorkoutField}
+            workout={workout}
+          />
+
+          <View style={styles.exerciseList}>
+            {workout.exercises.length === 0 ? (
+              <View style={styles.emptyWorkoutState}>
+                <PrimaryPillButton
+                  accessibilityLabel="Add exercise"
+                  icon="plus"
+                  label="Add Exercise"
+                  minWidth={190}
+                  onPress={openAddExercise}
+                />
+              </View>
+            ) : null}
+            {workout.exercises.map((exercise) => (
+              <ExerciseSection
+                key={exercise.id}
+                exercise={exercise}
+                exerciseNoteTargetId={exerciseNoteTargetId}
+                focusedFieldId={focusedFieldId}
+                noteHeights={noteHeights}
+                onAddSet={addSetToExercise}
+                onExerciseNoteHeight={updateExerciseNoteHeight}
+                onOpenExerciseOptions={setSelectedExerciseId}
+                onOpenSetOptions={openSetOptions}
+                onSetFocusedFieldId={setFocusedFieldId}
+                onSetNoteHeight={updateSetNoteHeight}
+                onShowFutureAction={showFutureActionAlert}
+                onToggleExerciseStar={toggleExerciseStar}
+                onUpdateExerciseNote={updateExerciseNote}
+                onUpdateSetField={updateSetField}
+                onUpdateSetTimeField={updateSetTimeField}
+                previousPerformance={previousPerformance[exercise.id]}
+                setExerciseNoteRef={setExerciseNoteRef}
+              />
+            ))}
+          </View>
+          {workout.exercises.length > 0 ? (
+            <SecondaryOutlineButton
+              accessibilityLabel="Add exercise"
+              icon="plus"
+              label="Add Exercise"
+              minWidth={190}
+              onPress={openAddExercise}
+              style={styles.addExerciseFooter}
+            />
+          ) : null}
+        </ScrollView>
+
+        <WorkoutDatePickerSheet
+          calendarMonth={calendarMonth}
+          onClose={() => {
+            setDatePickerOpen(false);
+            setFocusedFieldId(null);
+          }}
+          onMoveMonth={moveCalendarMonth}
+          onSelectDay={selectCalendarDay}
+          selectedDate={selectedDate}
+          visible={datePickerOpen}
+        />
+
+        <WorkoutTimePickerSheet
+          currentTime={timePickerTarget ? workout[timePickerTarget] : ""}
+          onClose={() => {
+            setTimePickerTarget(null);
+            setFocusedFieldId(null);
+          }}
+          onSetNow={() => {
+            if (!timePickerTarget) return;
+            updateWorkoutField(timePickerTarget, formatTimeField(new Date()));
+            setTimePickerTarget(null);
+            setFocusedFieldId(null);
+          }}
+          onUpdateTime={updateSelectedTime}
+          target={timePickerTarget}
+          visible={timePickerTarget !== null}
+        />
+
+        <SetOptionsSheet
+          onChangeSetType={updateSetType}
+          onClose={() => setSelectedSet(null)}
+          onCopyOnce={copySetOnce}
+          onDelete={confirmRemoveSetFromExercise}
+          selectedSet={selectedSet}
+          selectedSetData={selectedSetData}
+          visible={selectedSet !== null}
+        />
+
+        <WorkoutOptionsSheet
+          onClose={() => setWorkoutMenuOpen(false)}
+          onDeleteWorkout={confirmDeleteWorkout}
+          onReorder={openExerciseReorder}
+          visible={workoutMenuOpen}
+        />
+
+        <ExerciseOptionsSheet
+          onAddNote={() => {
+            if (!selectedExerciseId) return;
+            focusExerciseNote(selectedExerciseId);
+          }}
+          onCharts={() =>
+            showFutureActionAlert(
+              "Charts will be available after workouts are saved.",
+            )
+          }
+          onClose={() => setSelectedExerciseId(null)}
+          onDelete={() => {
+            if (!selectedExercise) return;
+            deleteExerciseFromWorkout(selectedExercise.id);
+          }}
+          onHistory={() =>
+            showFutureActionAlert(
+              "History will be available after workouts are saved.",
+            )
+          }
+          onPersonalRecords={() =>
+            showFutureActionAlert(
+              "Personal records will be available after workouts are saved.",
+            )
+          }
+          onReorder={openExerciseReorder}
+          onReplace={openExerciseReplacement}
+          onSettings={() =>
+            showFutureActionAlert("Exercise settings will be added later.")
+          }
+          selectedExercise={selectedExercise}
+          visible={selectedExerciseId !== null}
+        />
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
+}
+

@@ -1,11 +1,9 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useState } from "react";
 import {
   Alert,
-  Animated,
-  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -23,77 +21,12 @@ import {
   SecondaryOutlineButton,
 } from "@/components/action-buttons";
 import { AppHeader } from "@/components/app-header";
+import { BottomSheet } from "@/components/bottom-sheet";
 import { useRoutines } from "@/state/routines";
 import { colors } from "@/theme/colors";
 import { radius } from "@/theme/radius";
 import { spacing } from "@/theme/spacing";
 import { backOrReplace } from "@/utils/navigation";
-
-// --- REUSABLE BOTTOM SHEET COMPONENT ---
-function BottomSheet({
-  children,
-  insetsBottom,
-  onClose,
-  visible,
-}: {
-  children: React.ReactNode;
-  insetsBottom: number;
-  onClose: () => void;
-  visible: boolean;
-}) {
-  const [showModal, setShowModal] = useState(visible);
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    if (visible) {
-      setShowModal(true);
-      fadeAnim.setValue(0);
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 120,
-        useNativeDriver: true,
-      }).start();
-    } else {
-      Animated.timing(fadeAnim, {
-        toValue: 0,
-        duration: 120,
-        useNativeDriver: true,
-      }).start(() => {
-        setShowModal(false);
-      });
-    }
-  }, [visible, fadeAnim]);
-
-  if (!showModal) return null;
-
-  return (
-    <Modal
-      animationType="none"
-      onRequestClose={onClose}
-      transparent
-      visible={showModal}
-    >
-      <Animated.View style={[styles.sheetContainer, { opacity: fadeAnim }]}>
-        <View style={styles.scrimOverlay} />
-        <Pressable
-          accessibilityLabel="Close menu"
-          onPress={onClose}
-          style={StyleSheet.absoluteFillObject}
-        />
-        <View
-          style={[
-            styles.sheet,
-            {
-              paddingBottom: 34 + insetsBottom,
-            },
-          ]}
-        >
-          {children}
-        </View>
-      </Animated.View>
-    </Modal>
-  );
-}
 
 export default function RoutineDetailScreen() {
   const insets = useSafeAreaInsets();
@@ -316,7 +249,6 @@ export default function RoutineDetailScreen() {
 
         {/* --- TARGET PROGRESSION MENU --- */}
         <BottomSheet
-          insetsBottom={insets.bottom}
           onClose={() => setTargetMenuOpen(false)}
           visible={targetMenuOpen}
         >
@@ -373,7 +305,6 @@ export default function RoutineDetailScreen() {
 
         {/* --- GLOBAL ROUTINE MENU MODAL --- */}
         <BottomSheet
-          insetsBottom={insets.bottom}
           onClose={() => setRoutineMenuOpen(false)}
           visible={routineMenuOpen}
         >
@@ -430,7 +361,6 @@ export default function RoutineDetailScreen() {
 
         {/* --- EXERCISE OPTIONS MODAL --- */}
         <BottomSheet
-          insetsBottom={insets.bottom}
           onClose={() => setSelectedExerciseId(null)}
           visible={selectedExerciseId !== null}
         >
@@ -683,22 +613,6 @@ const styles = StyleSheet.create({
   disabledAction: { opacity: 0.55 },
 
   // --- BOTTOM SHEET MODAL STYLES ---
-  sheetContainer: {
-    flex: 1,
-    justifyContent: "flex-end",
-  },
-  scrimOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0, 0, 0, 0.4)",
-  },
-  sheet: {
-    backgroundColor: "#06100f",
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    gap: 22,
-    paddingHorizontal: 34,
-    paddingTop: 36,
-  },
   exerciseSheetTitle: {
     color: colors.textPrimary,
     fontSize: 22,
@@ -762,3 +676,5 @@ const styles = StyleSheet.create({
     width: 36,
   },
 });
+
+

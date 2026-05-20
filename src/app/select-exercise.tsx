@@ -1,9 +1,7 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useState } from "react";
 import {
-  Animated,
-  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -17,6 +15,7 @@ import {
 } from "react-native-safe-area-context";
 
 import { AppHeader } from "@/components/app-header";
+import { BottomSheet } from "@/components/bottom-sheet";
 import {
   createCategory,
   deleteCategory,
@@ -33,72 +32,6 @@ import { colors } from "@/theme/colors";
 import { radius } from "@/theme/radius";
 import { spacing } from "@/theme/spacing";
 import { backOrReplace } from "@/utils/navigation";
-
-// --- REUSABLE BOTTOM SHEET COMPONENT ---
-function BottomSheet({
-  children,
-  insetsBottom,
-  onClose,
-  visible,
-}: {
-  children: React.ReactNode;
-  insetsBottom: number;
-  onClose: () => void;
-  visible: boolean;
-}) {
-  const [showModal, setShowModal] = useState(visible);
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    if (visible) {
-      setShowModal(true);
-      fadeAnim.setValue(0);
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 120,
-        useNativeDriver: true,
-      }).start();
-    } else {
-      Animated.timing(fadeAnim, {
-        toValue: 0,
-        duration: 120,
-        useNativeDriver: true,
-      }).start(() => {
-        setShowModal(false);
-      });
-    }
-  }, [visible, fadeAnim]);
-
-  if (!showModal) return null;
-
-  return (
-    <Modal
-      animationType="none"
-      onRequestClose={onClose}
-      transparent
-      visible={showModal}
-    >
-      <Animated.View style={[styles.sheetContainer, { opacity: fadeAnim }]}>
-        <View style={styles.scrimOverlay} />
-        <Pressable
-          accessibilityLabel="Close menu"
-          onPress={onClose}
-          style={StyleSheet.absoluteFillObject}
-        />
-        <View
-          style={[
-            styles.sheet,
-            {
-              paddingBottom: 34 + insetsBottom,
-            },
-          ]}
-        >
-          {children}
-        </View>
-      </Animated.View>
-    </Modal>
-  );
-}
 
 export default function SelectExerciseScreen() {
   const router = useRouter();
@@ -368,7 +301,6 @@ export default function SelectExerciseScreen() {
 
         {/* 1. OPTIONS MENU SHEET */}
         <BottomSheet
-          insetsBottom={insets.bottom}
           onClose={() => setOptionsSheetOpen(false)}
           visible={optionsSheetOpen}
         >
@@ -410,7 +342,6 @@ export default function SelectExerciseScreen() {
 
         {/* 2. CREATE CATEGORY SHEET */}
         <BottomSheet
-          insetsBottom={insets.bottom}
           onClose={() => {
             setCreateSheetOpen(false);
             setNewCategoryName("");
@@ -450,7 +381,6 @@ export default function SelectExerciseScreen() {
 
         {/* 3. DELETE CATEGORY SHEET */}
         <BottomSheet
-          insetsBottom={insets.bottom}
           onClose={() => {
             setDeleteSheetOpen(false);
             setCategoryPendingDelete(null);
@@ -618,19 +548,6 @@ const styles = StyleSheet.create({
   toggleTextActive: { color: colors.background },
 
   // --- SHEETS ---
-  sheetContainer: { flex: 1, justifyContent: "flex-end" },
-  scrimOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0, 0, 0, 0.4)",
-  },
-  sheet: {
-    backgroundColor: "#06100f",
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    paddingHorizontal: 24,
-    paddingTop: 32,
-    gap: 20,
-  },
   sheetTitle: { color: colors.textPrimary, fontSize: 22, fontWeight: "600" },
   sheetDescription: {
     color: colors.textSecondary,
@@ -687,3 +604,5 @@ const styles = StyleSheet.create({
     borderBottomColor: "rgba(255,255,255,0.05)",
   },
 });
+
+
