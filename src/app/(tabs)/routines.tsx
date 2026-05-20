@@ -135,10 +135,7 @@ export default function RoutinesScreen() {
         </Pressable>
 
         {/* Global Menu Bottom Sheet */}
-        <BottomSheet
-          onClose={() => setMenuOpen(false)}
-          visible={menuOpen}
-        >
+        <BottomSheet onClose={() => setMenuOpen(false)} visible={menuOpen}>
           <Pressable
             accessibilityRole="button"
             onPress={() => {
@@ -373,7 +370,6 @@ const styles = StyleSheet.create({
   sheetAction: {
     alignItems: "center",
     flexDirection: "row",
-    gap: 16,
     minHeight: 52,
     paddingHorizontal: 10,
   },
@@ -389,5 +385,3 @@ const styles = StyleSheet.create({
     color: "#ffaaa1",
   },
 });
-
-

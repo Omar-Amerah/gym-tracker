@@ -20,7 +20,8 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "userInterfaceStyle": "dark",
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.omaramerah.gymtracker"
     },
     "androidStatusBar": {
       "backgroundColor": "#000000",
@@ -50,6 +51,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "22d27ba8-a90b-4d3f-a407-9d8c8c84d579"
+      }
     }
   }
 }

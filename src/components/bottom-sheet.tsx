@@ -1,9 +1,4 @@
-import {
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Animated,
   Modal,
@@ -110,7 +105,9 @@ export function BottomSheet({
         >
           {showHandle ? <View style={styles.handle} /> : null}
           {title ? <Text style={styles.title}>{title}</Text> : null}
-          <View style={contentStyle}>{renderChildren ? children : null}</View>
+          <View style={[styles.content, contentStyle]}>
+            {renderChildren ? children : null}
+          </View>
         </View>
       </Animated.View>
     </Modal>
@@ -121,6 +118,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     justifyContent: "flex-end",
+  },
+  content: {
+    gap: 18,
   },
   scrim: {
     ...StyleSheet.absoluteFillObject,
@@ -148,6 +148,6 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontSize: 22,
     fontWeight: "600",
-    marginBottom: 2,
+    marginBottom: 4,
   },
 });
