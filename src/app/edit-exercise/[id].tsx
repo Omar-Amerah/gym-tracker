@@ -18,6 +18,7 @@ import {
     useSafeAreaInsets,
 } from "react-native-safe-area-context";
 
+import { PrimaryPillButton } from "@/components/action-buttons";
 import { AppHeader } from "@/components/app-header";
 import {
   deleteExercise,
@@ -263,18 +264,13 @@ export default function EditExerciseScreen() {
           onBackPress={() => router.back()}
           title="Edit Exercise"
           rightAccessory={
-            <Pressable
+            <PrimaryPillButton
               disabled={isLoading || !name.trim() || !category.trim()}
+              label="SAVE"
               onPress={() => {
                 void saveExercise();
               }}
-              style={({ pressed }) => [
-                styles.saveBtn,
-                pressed && styles.pressed,
-              ]}
-            >
-              <Text style={styles.saveText}>SAVE</Text>
-            </Pressable>
+            />
           }
         />
 
@@ -497,18 +493,6 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: colors.background,
-  },
-
-  saveBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 8,
-  },
-
-  saveText: {
-    color: colors.accent,
-    fontSize: 15,
-    fontWeight: "700",
-    letterSpacing: 0.4,
   },
 
   content: {

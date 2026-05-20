@@ -18,6 +18,10 @@ import {
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 
+import {
+  PrimaryPillButton,
+  SecondaryOutlineButton,
+} from "@/components/action-buttons";
 import { AppHeader } from "@/components/app-header";
 import { useRoutines } from "@/state/routines";
 import { colors } from "@/theme/colors";
@@ -199,18 +203,13 @@ export default function RoutineDetailScreen() {
           onBackPress={() => backOrReplace("/routines")}
           onMorePress={() => setRoutineMenuOpen(true)}
           rightAccessory={
-            <Pressable
-              accessibilityRole="button"
+            <PrimaryPillButton
+              accessibilityLabel="Start workout"
               disabled={isStartingWorkout}
+              label="START"
+              minWidth={92}
               onPress={startWorkout}
-              style={({ pressed }) => [
-                styles.startPill,
-                isStartingWorkout && styles.disabledAction,
-                pressed && styles.buttonPressed,
-              ]}
-            >
-              <Text style={styles.startPillText}>START</Text>
-            </Pressable>
+            />
           }
           title={routine.name}
         />
@@ -288,23 +287,32 @@ export default function RoutineDetailScreen() {
               </Pressable>
             ))}
           </View>
-        </ScrollView>
 
-        <Pressable
-          accessibilityRole="button"
-          onPress={openAddExercise}
-          style={({ pressed }) => [
-            styles.addExercise,
-            { bottom: 34 + insets.bottom },
-            pressed && styles.buttonPressed,
-          ]}
-        >
-          <View style={styles.plusIcon}>
-            <View style={styles.plusVertical} />
-            <View style={styles.plusHorizontal} />
+          <View
+            style={[
+              styles.addExerciseFooter,
+              routine.exercises.length === 0 && styles.emptyAddExerciseFooter,
+            ]}
+          >
+            {routine.exercises.length === 0 ? (
+              <PrimaryPillButton
+                accessibilityLabel="Add exercise"
+                icon="plus"
+                label="Add Exercise"
+                minWidth={190}
+                onPress={openAddExercise}
+              />
+            ) : (
+              <SecondaryOutlineButton
+                accessibilityLabel="Add exercise"
+                icon="plus"
+                label="Add Exercise"
+                minWidth={190}
+                onPress={openAddExercise}
+              />
+            )}
           </View>
-          <Text style={styles.addExerciseText}>Add Exercise</Text>
-        </Pressable>
+        </ScrollView>
 
         {/* --- TARGET PROGRESSION MENU --- */}
         <BottomSheet
@@ -570,20 +578,6 @@ const styles = StyleSheet.create({
   },
   emptyText: { color: colors.textPrimary, fontSize: 18 },
 
-  startPill: {
-    backgroundColor: colors.accent,
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    marginRight: 4,
-  },
-  startPillText: {
-    color: colors.background,
-    fontSize: 12,
-    fontWeight: "700",
-    letterSpacing: 0.5,
-  },
-
   content: { paddingHorizontal: spacing.xxl },
 
   formPanel: {
@@ -676,44 +670,14 @@ const styles = StyleSheet.create({
     letterSpacing: 0,
     lineHeight: 19,
   },
-  addExercise: {
+  addExerciseFooter: {
     alignItems: "center",
-    alignSelf: "center",
-    backgroundColor: colors.fabBackground,
-    borderRadius: 20,
-    flexDirection: "row",
-    gap: 18,
-    height: 56,
+    marginBottom: 18,
+    marginTop: 22,
+  },
+  emptyAddExerciseFooter: {
+    minHeight: 180,
     justifyContent: "center",
-    minWidth: 236,
-    paddingHorizontal: 28,
-    position: "absolute",
-  },
-  addExerciseText: {
-    color: colors.background,
-    fontSize: 15,
-    fontWeight: "500",
-    letterSpacing: 0,
-  },
-  plusIcon: {
-    alignItems: "center",
-    height: 20,
-    justifyContent: "center",
-    width: 20,
-  },
-  plusVertical: {
-    backgroundColor: colors.background,
-    borderRadius: radius.xs,
-    height: 20,
-    position: "absolute",
-    width: 2,
-  },
-  plusHorizontal: {
-    backgroundColor: colors.background,
-    borderRadius: radius.xs,
-    height: 2,
-    position: "absolute",
-    width: 20,
   },
   buttonPressed: { opacity: 0.84 },
   disabledAction: { opacity: 0.55 },

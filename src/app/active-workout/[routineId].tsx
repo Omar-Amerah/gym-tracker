@@ -22,6 +22,10 @@ import {
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 
+import {
+  PrimaryPillButton,
+  SecondaryOutlineButton,
+} from "@/components/action-buttons";
 import type { ExerciseRecord } from "@/db/schema";
 import {
   deleteWorkout,
@@ -1577,16 +1581,12 @@ export default function ActiveWorkoutScreen() {
               </Text>
             </View>
 
-            <Pressable
-              accessibilityRole="button"
+            <PrimaryPillButton
+              accessibilityLabel="Done reordering"
+              label="DONE"
+              minWidth={84}
               onPress={() => setIsReorderingExercises(false)}
-              style={({ pressed }) => [
-                styles.finishHeaderButton,
-                pressed && styles.pressed,
-              ]}
-            >
-              <Text style={styles.finishHeaderText}>DONE</Text>
-            </Pressable>
+            />
           </View>
 
           <View style={styles.reorderList}>
@@ -1666,25 +1666,19 @@ export default function ActiveWorkoutScreen() {
                 size={23}
               />
             </Pressable>
-            <Pressable
+            <PrimaryPillButton
               accessibilityLabel="Finish workout"
-              accessibilityRole="button"
               disabled={isSavingWorkout}
-              onPress={finishWorkout}
-              style={({ pressed }) => [
-                styles.finishHeaderButton,
-                isSavingWorkout && styles.disabledAction,
-                pressed && styles.pressed,
-              ]}
-            >
-              <Text style={styles.finishHeaderText}>
-                {isSavingWorkout
+              label={
+                isSavingWorkout
                   ? "SAVING"
                   : workout.status === "completed"
                     ? "DONE"
-                    : "FINISH"}
-              </Text>
-            </Pressable>
+                    : "FINISH"
+              }
+              minWidth={84}
+              onPress={finishWorkout}
+            />
             <Pressable
               accessibilityLabel="Workout options"
               accessibilityRole="button"
@@ -1775,21 +1769,13 @@ export default function ActiveWorkoutScreen() {
           <View style={styles.exerciseList}>
             {workout.exercises.length === 0 ? (
               <View style={styles.emptyWorkoutState}>
-                <Pressable
-                  accessibilityRole="button"
+                <PrimaryPillButton
+                  accessibilityLabel="Add exercise"
+                  icon="plus"
+                  label="Add Exercise"
+                  minWidth={190}
                   onPress={openAddExercise}
-                  style={({ pressed }) => [
-                    styles.addExerciseButton,
-                    pressed && styles.pressed,
-                  ]}
-                >
-                  <MaterialCommunityIcons
-                    color={colors.background}
-                    name="plus"
-                    size={20}
-                  />
-                  <Text style={styles.addExerciseButtonText}>Add Exercise</Text>
-                </Pressable>
+                />
               </View>
             ) : null}
             {workout.exercises.map((exercise) => {
@@ -2082,21 +2068,14 @@ export default function ActiveWorkoutScreen() {
             })}
           </View>
           {workout.exercises.length > 0 ? (
-            <Pressable
-              accessibilityRole="button"
+            <SecondaryOutlineButton
+              accessibilityLabel="Add exercise"
+              icon="plus"
+              label="Add Exercise"
+              minWidth={190}
               onPress={openAddExercise}
-              style={({ pressed }) => [
-                styles.addExerciseInlineButton,
-                pressed && styles.pressed,
-              ]}
-            >
-              <MaterialCommunityIcons
-                color={colors.accent}
-                name="plus"
-                size={18}
-              />
-              <Text style={styles.addExerciseInlineText}>Add Exercise</Text>
-            </Pressable>
+              style={styles.addExerciseFooter}
+            />
           ) : null}
         </ScrollView>
 
@@ -2795,20 +2774,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 6,
   },
-  finishHeaderButton: {
-    alignItems: "center",
-    backgroundColor: colors.accent,
-    borderRadius: radius.lg,
-    height: 40,
-    justifyContent: "center",
-    paddingHorizontal: 9,
-  },
-  finishHeaderText: {
-    color: colors.background,
-    fontSize: 12,
-    fontWeight: "800",
-    letterSpacing: 0.4,
-  },
   content: {
     paddingHorizontal: spacing.xxl,
     paddingTop: 8,
@@ -2881,40 +2846,13 @@ const styles = StyleSheet.create({
   },
   emptyWorkoutState: {
     alignItems: "center",
-    justifyContent: "flex-end",
-    minHeight: 300,
-    paddingBottom: 34,
+    justifyContent: "center",
+    minHeight: 260,
+    paddingBottom: 24,
   },
-  addExerciseButton: {
-    alignItems: "center",
-    backgroundColor: colors.accent,
-    borderRadius: radius.lg,
-    flexDirection: "row",
-    gap: 8,
-    minHeight: 48,
-    paddingHorizontal: 18,
-  },
-  addExerciseButtonText: {
-    color: colors.background,
-    fontSize: 16,
-    fontWeight: "800",
-  },
-  addExerciseInlineButton: {
-    alignItems: "center",
-    alignSelf: "center",
-    borderColor: "rgba(91, 212, 224, 0.45)",
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: 7,
-    marginTop: 10,
-    minHeight: 44,
-    paddingHorizontal: 16,
-  },
-  addExerciseInlineText: {
-    color: colors.accent,
-    fontSize: 15,
-    fontWeight: "800",
+  addExerciseFooter: {
+    marginBottom: 18,
+    marginTop: 18,
   },
   exerciseHeader: {
     alignItems: "center",
