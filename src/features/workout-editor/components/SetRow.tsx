@@ -6,11 +6,12 @@ import type { PreviousExercisePerformance } from "@/db/workoutsRepository";
 import { colors } from "@/theme/colors";
 
 import { styles } from "../styles";
-import type { ActiveWorkoutExercise, ActiveWorkoutSet, SetField } from "../types";
-import {
-  getPreviousPlaceholder,
-  getSetFieldPlan,
-} from "../workoutFieldRules";
+import type {
+  ActiveWorkoutExercise,
+  ActiveWorkoutSet,
+  SetField,
+} from "../types";
+import { getPreviousPlaceholder, getSetFieldPlan } from "../workoutFieldRules";
 import { getSetLabel } from "../workoutUtils";
 import { SetInput } from "./SetInput";
 
@@ -106,16 +107,13 @@ export const SetRow = memo(function SetRow({
                 return;
               }
 
-              onUpdateSetField(
-                exercise.id,
-                set.id,
-                fieldPlan.field,
-                value,
-              );
+              onUpdateSetField(exercise.id, set.id, fieldPlan.field, value);
             }}
             setFocusedFieldId={onSetFocusedFieldId}
             value={
-              fieldPlan.field === "time" ? set.time : (set[fieldPlan.field] ?? "")
+              fieldPlan.field === "time"
+                ? set.time
+                : (set[fieldPlan.field] ?? "")
             }
             width={fieldPlan.width}
           />

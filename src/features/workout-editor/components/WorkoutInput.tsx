@@ -1,5 +1,5 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { memo } from "react";
+import { memo, useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
 
 import { colors } from "@/theme/colors";
@@ -33,7 +33,8 @@ export const WorkoutInput = memo(function WorkoutInput({
   value,
   wide,
 }: WorkoutInputProps) {
-  const focused = focusedFieldId === fieldId;
+  const [isFocused, setIsFocused] = useState(false);
+  const showFocus = isFocused || focusedFieldId === fieldId;
 
   return (
     <View style={[styles.workoutInputWrap, wide && styles.wideInput]}>
@@ -48,7 +49,7 @@ export const WorkoutInput = memo(function WorkoutInput({
           style={({ pressed }) => [
             styles.workoutInput,
             styles.pressableWorkoutInput,
-            focused && styles.inputFocused,
+            showFocus && styles.inputFocused,
             pressed && styles.pressed,
           ]}
         >
@@ -68,13 +69,19 @@ export const WorkoutInput = memo(function WorkoutInput({
         <TextInput
           keyboardType={keyboardType}
           multiline={multiline}
-          onBlur={() => setFocusedFieldId(null)}
+          onBlur={() => {
+            setIsFocused(false);
+            setFocusedFieldId(null);
+          }}
           onChangeText={onChangeText}
-          onFocus={() => setFocusedFieldId(fieldId)}
+          onFocus={() => {
+            setIsFocused(true);
+            setFocusedFieldId(fieldId);
+          }}
           placeholderTextColor={colors.textSecondary}
           style={[
             styles.workoutInput,
-            focused && styles.inputFocused,
+            showFocus && styles.inputFocused,
             multiline && styles.multilineInput,
           ]}
           textAlignVertical={multiline ? "top" : "center"}

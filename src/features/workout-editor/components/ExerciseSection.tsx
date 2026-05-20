@@ -1,5 +1,5 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { memo } from "react";
+import { memo, useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
 
 import type { PreviousExercisePerformance } from "@/db/workoutsRepository";
@@ -59,8 +59,10 @@ export const ExerciseSection = memo(function ExerciseSection({
   previousPerformance,
   setExerciseNoteRef,
 }: ExerciseSectionProps) {
-  const previousExerciseNote =
-    previousPerformance?.notes?.trim() || undefined;
+  const [isNoteFocused, setIsNoteFocused] = useState(false);
+  const showNoteFocus =
+    isNoteFocused || focusedFieldId === `exercise-${exercise.id}-notes`;
+  const previousExerciseNote = previousPerformance?.notes?.trim() || undefined;
 
   return (
     <View style={styles.exerciseSection}>
@@ -86,19 +88,26 @@ export const ExerciseSection = memo(function ExerciseSection({
           multiline
           onContentSizeChange={(event) => {
             const height = event.nativeEvent.contentSize.height;
-            onExerciseNoteHeight(exercise.id, height);
+            // Clamp to 48px until it genuinely hits a second line (> 60px)
+            const clampedHeight = height < 60 ? 48 : Math.min(150, height);
+            onExerciseNoteHeight(exercise.id, clampedHeight);
           }}
           onChangeText={(value) => onUpdateExerciseNote(exercise.id, value)}
-          onBlur={() => onSetFocusedFieldId(null)}
-          onFocus={() => onSetFocusedFieldId(`exercise-${exercise.id}-notes`)}
+          onBlur={() => {
+            setIsNoteFocused(false);
+            onSetFocusedFieldId(null);
+          }}
+          onFocus={() => {
+            setIsNoteFocused(true);
+            onSetFocusedFieldId(`exercise-${exercise.id}-notes`);
+          }}
           placeholder={previousExerciseNote || "Exercise note"}
           placeholderTextColor={colors.textMuted}
           ref={(ref) => setExerciseNoteRef(exercise.id, ref)}
           scrollEnabled
           style={[
             styles.exerciseNoteInput,
-            focusedFieldId === `exercise-${exercise.id}-notes` &&
-              styles.inputFocused,
+            showNoteFocus && styles.inputFocused,
             {
               height: noteHeights[`exercise-${exercise.id}`] ?? 48,
             },

@@ -1,10 +1,5 @@
-import { memo } from "react";
-import {
-  TextInput,
-  View,
-  type StyleProp,
-  type TextStyle,
-} from "react-native";
+import { memo, useState } from "react";
+import { TextInput, View, type StyleProp, type TextStyle } from "react-native";
 
 import { colors } from "@/theme/colors";
 
@@ -37,7 +32,8 @@ export const SetInput = memo(function SetInput({
   value,
   width,
 }: SetInputProps) {
-  const focused = focusedFieldId === fieldId;
+  const [isFocused, setIsFocused] = useState(false);
+  const showFocus = isFocused || focusedFieldId === fieldId;
 
   return (
     <View
@@ -50,24 +46,32 @@ export const SetInput = memo(function SetInput({
       <TextInput
         keyboardType={keyboardType}
         multiline={multiline}
-        onBlur={() => setFocusedFieldId(null)}
+        onBlur={() => {
+          setIsFocused(false);
+          setFocusedFieldId(null);
+        }}
         onContentSizeChange={
           onContentSizeChange
             ? (event) => {
                 const height = event.nativeEvent.contentSize.height;
-                onContentSizeChange(height);
+                // Clamp to 38px until the content genuinely wraps to a second line (> 50px)
+                const clampedHeight = height < 50 ? 38 : Math.min(120, height);
+                onContentSizeChange(clampedHeight);
               }
             : undefined
         }
         onChangeText={onChangeText}
-        onFocus={() => setFocusedFieldId(fieldId)}
+        onFocus={() => {
+          setIsFocused(true);
+          setFocusedFieldId(fieldId);
+        }}
         placeholder={placeholder}
         placeholderTextColor={colors.textMuted}
         scrollEnabled={multiline}
         style={[
           styles.setInput,
           width ? { width } : null,
-          focused && styles.inputFocused,
+          showFocus && styles.inputFocused,
           style,
         ]}
         textAlignVertical={multiline ? "top" : "center"}
