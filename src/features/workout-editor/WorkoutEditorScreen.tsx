@@ -2,7 +2,6 @@ import { useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
-  Dimensions,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -31,6 +30,7 @@ import { ExerciseSection } from "./components/ExerciseSection";
 import { ReorderExercisesView } from "./components/ReorderExercisesView";
 import { SetOptionsSheet } from "./components/SetOptionsSheet";
 import { WorkoutDatePickerSheet } from "./components/WorkoutDatePickerSheet";
+import { WorkoutDetailsForm } from "./components/WorkoutDetailsForm";
 import { WorkoutHeader } from "./components/WorkoutHeader";
 import { WorkoutOptionsSheet } from "./components/WorkoutOptionsSheet";
 import { WorkoutTimePickerSheet } from "./components/WorkoutTimePickerSheet";
@@ -86,6 +86,9 @@ export function WorkoutEditorScreen() {
   const exerciseNoteRefs = useRef<Record<string, TextInput | null>>({});
   const scrollViewRef = useRef<ScrollView | null>(null);
   const scrollYRef = useRef(0);
+  const scrollFocusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const isDeletingWorkoutRef = useRef(false);
   const isFinishingWorkoutRef = useRef(false);
   const { previousPerformance } = usePreviousPerformance(workout);
@@ -606,40 +609,24 @@ export function WorkoutEditorScreen() {
     (_fieldId: string, inputRef: TextInput | null) => {
       if (!inputRef) return;
 
-      const scrollToInput = () => {
-        inputRef.measureInWindow((_x, y, _width, height) => {
-          const windowHeight = Dimensions.get("window").height;
+      if (scrollFocusTimeoutRef.current) {
+        clearTimeout(scrollFocusTimeoutRef.current);
+      }
 
-          // Approximate Android keyboard area. This does not need exact keyboard height;
-          // it just keeps the focused box comfortably above the keyboard.
-          const keyboardReserve = Platform.OS === "android" ? 330 : 260;
-          const visibleBottom = windowHeight - keyboardReserve;
-          const visibleTop = insets.top + 72;
-          const margin = 24;
+      scrollFocusTimeoutRef.current = setTimeout(
+        () => {
+          inputRef.measureInWindow((_x, y, _width, _height) => {
+            const targetY = insets.top + 125;
+            const nextScrollY = scrollYRef.current + y - targetY;
 
-          const inputBottom = y + height;
-          let nextScrollY: number | null = null;
-
-          if (inputBottom > visibleBottom - margin) {
-            nextScrollY =
-              scrollYRef.current + inputBottom - visibleBottom + margin;
-          } else if (y < visibleTop + margin) {
-            nextScrollY = scrollYRef.current - (visibleTop + margin - y);
-          }
-
-          if (nextScrollY !== null) {
             scrollViewRef.current?.scrollTo({
               y: Math.max(0, nextScrollY),
               animated: true,
             });
-          }
-        });
-      };
-
-      requestAnimationFrame(scrollToInput);
-
-      // Android often reports a better position just after keyboard begins opening.
-      setTimeout(scrollToInput, 90);
+          });
+        },
+        Platform.OS === "android" ? 60 : 30,
+      );
     },
     [insets.top],
   );
@@ -739,6 +726,13 @@ export function WorkoutEditorScreen() {
           scrollEventThrottle={16}
           showsVerticalScrollIndicator={false}
         >
+          <WorkoutDetailsForm
+            onFocusScroll={scrollFocusedInputIntoView}
+            onOpenDatePicker={openDatePicker}
+            setTimePickerTarget={setTimePickerTarget}
+            updateWorkoutField={updateWorkoutField}
+            workout={workout}
+          />
           <View style={styles.exerciseList}>
             {workout.exercises.length === 0 ? (
               <View style={styles.emptyWorkoutState}>
