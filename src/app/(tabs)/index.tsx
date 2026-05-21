@@ -1,30 +1,16 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
-import * as DocumentPicker from "expo-document-picker";
-import { File, Paths } from "expo-file-system";
 import { useRouter } from "expo-router";
-import * as Sharing from "expo-sharing";
-import type { ComponentProps } from "react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import {
-  Alert,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 
 import { AppHeader } from "@/components/app-header";
 import { BottomSheet } from "@/components/bottom-sheet";
-import {
-  clearAllLocalData,
-  exportBackupToCsvText,
-  getDatabaseSummary,
-  importBackupFromCsvText,
-  resetSeedData,
-} from "@/db/backupRepository";
+import { DataBackupSheet } from "@/components/data-backup-sheet";
 import {
   getActiveDraftWorkout,
   listCompletedWorkouts,
@@ -39,18 +25,58 @@ import { typography } from "@/theme/typography";
 
 export default function LogScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { refreshRoutines } = useRoutines();
+  const scrollViewRef = useRef<ScrollView | null>(null);
+  const datePositionsRef = useRef<Record<string, number>>({});
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isStartingWorkout, setIsStartingWorkout] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
-  const [isImporting, setIsImporting] = useState(false);
-  const [isClearing, setIsClearing] = useState(false);
+  const [jumpSheetOpen, setJumpSheetOpen] = useState(false);
+  const [selectedJumpMonthKey, setSelectedJumpMonthKey] = useState<
+    string | null
+  >(null);
   const [activeDraft, setActiveDraft] = useState<LoggedWorkout | null>(null);
   const [workouts, setWorkouts] = useState<LoggedWorkout[]>([]);
-  const visibleWorkouts = activeDraft ? [activeDraft, ...workouts] : workouts;
-  const isDataActionRunning = isExporting || isImporting || isClearing;
+  const visibleWorkouts = useMemo(
+    () => (activeDraft ? [activeDraft, ...workouts] : workouts),
+    [activeDraft, workouts],
+  );
+  const monthGroups = useMemo(
+    () => buildLogMonthIndex(visibleWorkouts),
+    [visibleWorkouts],
+  );
+  const workoutDateCounts = useMemo(
+    () => buildWorkoutDateCounts(visibleWorkouts),
+    [visibleWorkouts],
+  );
+  const selectedMonthIndex = monthGroups.findIndex(
+    (group) => group.key === selectedJumpMonthKey,
+  );
+  const selectedMonth =
+    selectedMonthIndex >= 0 ? monthGroups[selectedMonthIndex] : monthGroups[0];
+  const selectedCalendarDays = selectedMonth
+    ? buildCalendarDays(selectedMonth.key, workoutDateCounts)
+    : [];
+
+  useEffect(() => {
+    datePositionsRef.current = {};
+  }, [activeDraft?.id, workouts]);
+
+  useEffect(() => {
+    if (monthGroups.length === 0) {
+      setSelectedJumpMonthKey(null);
+      return;
+    }
+
+    if (
+      !selectedJumpMonthKey ||
+      !monthGroups.some((group) => group.key === selectedJumpMonthKey)
+    ) {
+      setSelectedJumpMonthKey(monthGroups[0].key);
+    }
+  }, [monthGroups, selectedJumpMonthKey]);
 
   const openWorkout = useCallback(
     (workout: LoggedWorkout) => {
@@ -101,243 +127,121 @@ export default function LogScreen() {
     await Promise.all([loadLogData(), refreshRoutines()]);
   }, [loadLogData, refreshRoutines]);
 
-  const exportBackup = useCallback(async () => {
-    if (isDataActionRunning) return;
-
-    setMenuOpen(false);
-    setIsExporting(true);
-    try {
-      const csvText = await exportBackupToCsvText();
-      const file = new File(Paths.cache, `${createBackupFilename()}.csv`);
-      file.create({ overwrite: true });
-      file.write(csvText);
-
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(file.uri, {
-          dialogTitle: "Export Gym Tracker Backup",
-          mimeType: "text/csv",
-        });
-      } else {
-        Alert.alert("Backup created", file.uri);
-      }
-    } catch (exportError) {
-      console.error("Failed to export backup", exportError);
-      Alert.alert("Export failed", "Could not create a backup file.");
-    } finally {
-      setIsExporting(false);
-    }
-  }, [isDataActionRunning]);
-
-  const chooseImportFile = useCallback(async () => {
-    setIsImporting(true);
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        copyToCacheDirectory: true,
-        type: ["text/csv", "text/plain", "text/*", "application/vnd.ms-excel"],
-      });
-      if (result.canceled) return;
-
-      const asset = result.assets?.[0];
-      if (!asset?.uri) {
-        Alert.alert("Import failed", "No backup file was selected.");
-        return;
-      }
-
-      const backupText = await new File(asset.uri).text();
-      if (!hasExpectedBackupMarkers(backupText)) {
-        Alert.alert(
-          "Invalid backup",
-          "This file does not look like a Gym Tracker CSV backup.",
-        );
-        return;
-      }
-
-      Alert.alert(
-        "Replace local data?",
-        "Your current routines, exercises and workout logs will be replaced.",
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Import",
-            style: "destructive",
-            onPress: () => {
-              setIsImporting(true);
-              void importBackupFromCsvText(backupText)
-                .then(refreshAfterDataChange)
-                .then(() => {
-                  Alert.alert("Import complete.");
-                })
-                .catch((importError) => {
-                  console.error("Failed to import backup", importError);
-                  Alert.alert(
-                    "Import failed",
-                    "The backup could not be imported. Your data was not replaced.",
-                  );
-                })
-                .finally(() => setIsImporting(false));
-            },
-          },
-        ],
-      );
-    } catch (importError) {
-      console.error("Failed to choose backup file", importError);
-      Alert.alert("Import failed", "Could not read the selected backup file.");
-    } finally {
-      setIsImporting(false);
-    }
-  }, [refreshAfterDataChange]);
-
-  const confirmImportBackup = useCallback(() => {
-    if (isDataActionRunning) return;
-
-    setMenuOpen(false);
-    Alert.alert(
-      "Import backup?",
-      "This will replace your current local data with the selected backup. Export a backup first if you want to keep your current data.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Choose File",
-          onPress: () => {
-            void chooseImportFile();
-          },
-        },
-      ],
-    );
-  }, [chooseImportFile, isDataActionRunning]);
-
-  const confirmClearLocalData = useCallback(() => {
-    if (isDataActionRunning) return;
-
-    setMenuOpen(false);
-    Alert.alert(
-      "Clear local data?",
-      "This will permanently delete all routines, exercises and workout logs stored on this device.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Clear",
-          style: "destructive",
-          onPress: () => {
-            setIsClearing(true);
-            void clearAllLocalData()
-              .then(refreshAfterDataChange)
-              .then(() => Alert.alert("Local data cleared."))
-              .catch((clearError) => {
-                console.error("Failed to clear local data", clearError);
-                Alert.alert("Clear failed", "Could not clear local data.");
-              })
-              .finally(() => setIsClearing(false));
-          },
-        },
-      ],
-    );
-  }, [isDataActionRunning, refreshAfterDataChange]);
-
-  const confirmResetSeedData = useCallback(() => {
-    if (isDataActionRunning) return;
-
-    setMenuOpen(false);
-    Alert.alert(
-      "Reset seed data?",
-      "This will clear local data and restore the default categories, exercises and routines.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Reset",
-          style: "destructive",
-          onPress: () => {
-            setIsClearing(true);
-            void resetSeedData()
-              .then(refreshAfterDataChange)
-              .then(() => Alert.alert("Seed data restored."))
-              .catch((resetError) => {
-                console.error("Failed to reset seed data", resetError);
-                Alert.alert("Reset failed", "Could not restore seed data.");
-              })
-              .finally(() => setIsClearing(false));
-          },
-        },
-      ],
-    );
-  }, [isDataActionRunning, refreshAfterDataChange]);
-
-  const showDatabaseSummary = useCallback(async () => {
-    if (isDataActionRunning) return;
-
-    setMenuOpen(false);
-    try {
-      const summary = await getDatabaseSummary();
-      Alert.alert("Database Summary", formatDatabaseSummary(summary));
-    } catch (summaryError) {
-      console.error("Failed to load database summary", summaryError);
-      Alert.alert("Summary failed", "Could not load database counts.");
-    }
-  }, [isDataActionRunning]);
-
   return (
     <SafeAreaView edges={["top"]} style={styles.safeArea}>
       <View style={styles.screenRoot}>
         <AppHeader
           onMenuPress={() => setMenuOpen(true)}
-          onMorePress={() => setMenuOpen(true)}
+          rightAccessory={
+            <Pressable
+              accessibilityLabel="Jump to date"
+              accessibilityRole="button"
+              onPress={() => {
+                setSelectedJumpMonthKey(
+                  (current) => current ?? monthGroups[0]?.key ?? null,
+                );
+                setJumpSheetOpen(true);
+              }}
+              style={styles.headerIconButton}
+            >
+              <MaterialCommunityIcons
+                color={colors.accent}
+                name="calendar-month-outline"
+                size={23}
+              />
+            </Pressable>
+          }
           title="Logged Workouts"
         />
 
         <ScrollView
+          ref={scrollViewRef}
           contentContainerStyle={styles.scrollContent}
           style={styles.scroll}
           showsVerticalScrollIndicator={false}
         >
-          {isLoading ? (
-            <Text style={styles.stateText}>Loading workouts...</Text>
-          ) : null}
           {error ? <Text style={styles.stateText}>{error}</Text> : null}
           {!isLoading && !error && !activeDraft && workouts.length === 0 ? (
             <Text style={styles.stateText}>No logged workouts yet.</Text>
           ) : null}
-          {visibleWorkouts.map((workout, index) => (
-            <View key={workout.id} style={styles.entry}>
-              <View style={styles.dateColumn}>
-                <Text style={styles.weekday}>{workout.weekday}</Text>
-                <Text style={styles.day}>{workout.day}</Text>
-                <Text style={styles.month}>{workout.month}</Text>
-                {index < visibleWorkouts.length - 1 ? (
-                  <View style={styles.timelineLine} />
+          {visibleWorkouts.map((workout, index) => {
+            const previousWorkout =
+              index > 0 ? visibleWorkouts[index - 1] : null;
+            const currentYear = getWorkoutYear(workout);
+            const previousYear = previousWorkout
+              ? getWorkoutYear(previousWorkout)
+              : null;
+            const dateKey = getWorkoutDateKey(workout);
+            const previousDateKey = previousWorkout
+              ? getWorkoutDateKey(previousWorkout)
+              : null;
+            const isFirstOfDate = dateKey !== previousDateKey;
+            const showYearSeparator = index > 0 && currentYear !== previousYear;
+
+            return (
+              <View key={workout.id}>
+                {showYearSeparator ? (
+                  <View style={styles.yearSeparator}>
+                    <View style={styles.yearLine} />
+                    <Text style={styles.yearText}>{currentYear}</Text>
+                    <View style={styles.yearLine} />
+                  </View>
                 ) : null}
+
+                <View
+                  onLayout={(event) => {
+                    if (dateKey && isFirstOfDate) {
+                      datePositionsRef.current[dateKey] =
+                        event.nativeEvent.layout.y;
+                    }
+                  }}
+                  style={styles.entry}
+                >
+                  <View style={styles.dateColumn}>
+                    <Text style={styles.weekday}>{workout.weekday}</Text>
+                    <Text style={styles.day}>{workout.day}</Text>
+                    <Text style={styles.month}>{workout.month}</Text>
+                    {index < visibleWorkouts.length - 1 ? (
+                      <View style={styles.timelineLine} />
+                    ) : null}
+                  </View>
+
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => openWorkout(workout)}
+                    style={({ pressed }) => [
+                      styles.card,
+                      pressed && styles.cardPressed,
+                    ]}
+                  >
+                    <View style={styles.cardHeader}>
+                      <Text style={styles.workoutTitle}>{workout.name}</Text>
+                      {workout.status === "draft" ? (
+                        <Text style={styles.draftBadge}>In Progress</Text>
+                      ) : (
+                        <Text style={styles.duration}>
+                          {workout.durationMinutes === null
+                            ? "-- min"
+                            : `${workout.durationMinutes} min`}
+                        </Text>
+                      )}
+                    </View>
+
+                    <View style={styles.exerciseList}>
+                      {workout.exercises.map((exercise, exerciseIndex) => (
+                        <Text
+                          key={`${exercise}-${exerciseIndex}`}
+                          style={styles.exerciseText}
+                        >
+                          {exercise}
+                        </Text>
+                      ))}
+                    </View>
+                  </Pressable>
+                </View>
               </View>
-
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => openWorkout(workout)}
-                style={({ pressed }) => [
-                  styles.card,
-                  pressed && styles.cardPressed,
-                ]}
-              >
-                <View style={styles.cardHeader}>
-                  <Text style={styles.workoutTitle}>{workout.name}</Text>
-                  {workout.status === "draft" ? (
-                    <Text style={styles.draftBadge}>In Progress</Text>
-                  ) : (
-                    <Text style={styles.duration}>
-                      {workout.durationMinutes === null
-                        ? "-- min"
-                        : `${workout.durationMinutes} min`}
-                    </Text>
-                  )}
-                </View>
-
-                <View style={styles.exerciseList}>
-                  {workout.exercises.map((exercise) => (
-                    <Text key={exercise} style={styles.exerciseText}>
-                      {exercise}
-                    </Text>
-                  ))}
-                </View>
-              </Pressable>
-            </View>
-          ))}
+            );
+          })}
         </ScrollView>
 
         {activeDraft ? (
@@ -391,128 +295,321 @@ export default function LogScreen() {
           </Pressable>
         )}
 
-        <BottomSheet
+        <DataBackupSheet
           onClose={() => setMenuOpen(false)}
-          title="Data & Backup"
+          onDataChanged={refreshAfterDataChange}
           visible={menuOpen}
+        />
+
+        <BottomSheet
+          maxHeight="82%"
+          onClose={() => setJumpSheetOpen(false)}
+          title="Jump to Date"
+          visible={jumpSheetOpen}
         >
-          <BackupAction
-            disabled={isDataActionRunning}
-            icon="database-export-outline"
-            label={isExporting ? "Exporting..." : "Export CSV Backup"}
-            onPress={exportBackup}
-          />
-          <BackupAction
-            disabled={isDataActionRunning}
-            icon="database-import-outline"
-            label={isImporting ? "Importing..." : "Import CSV Backup"}
-            onPress={confirmImportBackup}
-          />
-          <BackupAction
-            disabled={isDataActionRunning}
-            icon="database-search-outline"
-            label="Database Summary"
-            onPress={() => {
-              void showDatabaseSummary();
-            }}
-          />
-          <BackupAction
-            destructive
-            disabled={isDataActionRunning}
-            icon="trash-can-outline"
-            label={isClearing ? "Clearing..." : "Clear Local Data"}
-            onPress={confirmClearLocalData}
-          />
-          <BackupAction
-            destructive
-            disabled={isDataActionRunning}
-            icon="database-refresh-outline"
-            label="Reset Seed Data"
-            onPress={confirmResetSeedData}
-          />
+          <ScrollView
+            contentContainerStyle={[
+              styles.jumpListContent,
+              { paddingBottom: insets.bottom + spacing.xxxl },
+            ]}
+            showsVerticalScrollIndicator={false}
+            style={styles.jumpList}
+          >
+            {!selectedMonth ? (
+              <Text style={styles.jumpEmptyText}>No workouts to jump to.</Text>
+            ) : null}
+            {selectedMonth ? (
+              <>
+                <View style={styles.calendarHeader}>
+                  <Pressable
+                    accessibilityLabel="Older month"
+                    accessibilityRole="button"
+                    disabled={
+                      selectedMonthIndex < 0 ||
+                      selectedMonthIndex >= monthGroups.length - 1
+                    }
+                    onPress={() => {
+                      const nextGroup = monthGroups[selectedMonthIndex + 1];
+                      if (nextGroup) setSelectedJumpMonthKey(nextGroup.key);
+                    }}
+                    style={({ pressed }) => [
+                      styles.calendarNavButton,
+                      (selectedMonthIndex < 0 ||
+                        selectedMonthIndex >= monthGroups.length - 1) &&
+                        styles.calendarNavDisabled,
+                      pressed && styles.sheetActionPressed,
+                    ]}
+                  >
+                    <MaterialCommunityIcons
+                      color={colors.accent}
+                      name="chevron-left"
+                      size={24}
+                    />
+                  </Pressable>
+
+                  <View style={styles.calendarTitleGroup}>
+                    <Text style={styles.calendarTitle}>
+                      {selectedMonth.monthLabel} {selectedMonth.year}
+                    </Text>
+                    <Text style={styles.calendarSubtitle}>
+                      {selectedMonth.workoutCount}{" "}
+                      {selectedMonth.workoutCount === 1
+                        ? "workout"
+                        : "workouts"}
+                    </Text>
+                  </View>
+
+                  <Pressable
+                    accessibilityLabel="Newer month"
+                    accessibilityRole="button"
+                    disabled={selectedMonthIndex <= 0}
+                    onPress={() => {
+                      const nextGroup = monthGroups[selectedMonthIndex - 1];
+                      if (nextGroup) setSelectedJumpMonthKey(nextGroup.key);
+                    }}
+                    style={({ pressed }) => [
+                      styles.calendarNavButton,
+                      selectedMonthIndex <= 0 && styles.calendarNavDisabled,
+                      pressed && styles.sheetActionPressed,
+                    ]}
+                  >
+                    <MaterialCommunityIcons
+                      color={colors.accent}
+                      name="chevron-right"
+                      size={24}
+                    />
+                  </Pressable>
+                </View>
+
+                <View style={styles.weekdayGrid}>
+                  {WEEKDAY_LABELS.map((label, weekdayIndex) => (
+                    <Text
+                      key={`${label}-${weekdayIndex}`}
+                      style={styles.calendarWeekday}
+                    >
+                      {label}
+                    </Text>
+                  ))}
+                </View>
+
+                <View style={styles.calendarGrid}>
+                  {selectedCalendarDays.map((day) => (
+                    <Pressable
+                      accessibilityLabel={
+                        day.hasWorkout
+                          ? `Jump to ${day.label} ${selectedMonth.monthLabel}`
+                          : undefined
+                      }
+                      accessibilityRole={day.hasWorkout ? "button" : undefined}
+                      disabled={!day.hasWorkout}
+                      key={day.key}
+                      onPress={() => {
+                        const y = datePositionsRef.current[day.key];
+                        setJumpSheetOpen(false);
+                        if (typeof y !== "number") {
+                          console.warn("Missing log date position", day.key);
+                          return;
+                        }
+                        requestAnimationFrame(() => {
+                          scrollViewRef.current?.scrollTo({
+                            y: Math.max(0, y - 12),
+                            animated: true,
+                          });
+                        });
+                      }}
+                      style={({ pressed }) => [
+                        styles.calendarDay,
+                        !day.isInMonth && styles.calendarDayOutside,
+                        day.hasWorkout && styles.calendarDayActive,
+                        pressed && styles.sheetActionPressed,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.calendarDayText,
+                          !day.isInMonth && styles.calendarDayOutsideText,
+                          day.hasWorkout && styles.calendarDayActiveText,
+                        ]}
+                      >
+                        {day.label}
+                      </Text>
+                      {day.hasWorkout ? (
+                        <View style={styles.calendarWorkoutDot} />
+                      ) : null}
+                    </Pressable>
+                  ))}
+                </View>
+
+                <Text style={styles.calendarHint}>
+                  Dots mark days with workouts. Tap a marked date to jump.
+                </Text>
+              </>
+            ) : null}
+          </ScrollView>
         </BottomSheet>
       </View>
     </SafeAreaView>
   );
 }
 
-function BackupAction({
-  destructive = false,
-  disabled,
-  icon,
-  label,
-  onPress,
-}: {
-  destructive?: boolean;
-  disabled: boolean;
-  icon: ComponentProps<typeof MaterialCommunityIcons>["name"];
+type WorkoutDateParts = {
+  month: string;
+  monthKey: string;
+  monthNumber: string;
+  year: string;
+};
+
+type LogMonthGroup = {
+  key: string;
+  monthLabel: string;
+  workoutCount: number;
+  year: string;
+};
+
+type CalendarDay = {
+  hasWorkout: boolean;
+  isInMonth: boolean;
+  key: string;
   label: string;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.sheetAction,
-        disabled && styles.sheetActionDisabled,
-        pressed && styles.sheetActionPressed,
-      ]}
-    >
-      <MaterialCommunityIcons
-        color={destructive ? "#ffaaa1" : colors.textPrimary}
-        name={icon}
-        size={24}
-        style={styles.sheetIcon}
-      />
-      <Text style={[styles.sheetText, destructive && styles.deleteText]}>
-        {label}
-      </Text>
-    </Pressable>
-  );
+};
+
+const WEEKDAY_LABELS = ["S", "M", "T", "W", "T", "F", "S"];
+
+function buildLogMonthIndex(workouts: LoggedWorkout[]): LogMonthGroup[] {
+  const groups: LogMonthGroup[] = [];
+
+  for (const workout of workouts) {
+    const parts = getWorkoutDateParts(workout);
+    const existingGroup = groups.find((group) => group.key === parts.monthKey);
+
+    if (existingGroup) {
+      existingGroup.workoutCount += 1;
+      continue;
+    }
+
+    groups.push({
+      key: parts.monthKey,
+      year: parts.year,
+      monthLabel: parts.month,
+      workoutCount: 1,
+    });
+  }
+
+  return groups;
 }
 
-function createBackupFilename() {
-  const date = new Date();
-  const value = [
+function buildWorkoutDateCounts(workouts: LoggedWorkout[]) {
+  const counts: Record<string, number> = {};
+
+  for (const workout of workouts) {
+    const dateKey = getWorkoutDateKey(workout);
+    if (!dateKey) continue;
+    counts[dateKey] = (counts[dateKey] ?? 0) + 1;
+  }
+
+  return counts;
+}
+
+function buildCalendarDays(
+  monthKey: string,
+  workoutDateCounts: Record<string, number>,
+): CalendarDay[] {
+  const [yearValue, monthValue] = monthKey.split("-");
+  const year = Number(yearValue);
+  const month = Number(monthValue);
+  if (!year || !month) return [];
+
+  const firstDay = new Date(year, month - 1, 1);
+  const startOffset = firstDay.getDay();
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const cells = Math.ceil((startOffset + daysInMonth) / 7) * 7;
+  const days: CalendarDay[] = [];
+
+  for (let index = 0; index < cells; index += 1) {
+    const dayNumber = index - startOffset + 1;
+    const date = new Date(year, month - 1, dayNumber);
+    const isInMonth = dayNumber >= 1 && dayNumber <= daysInMonth;
+    const key = formatDateKey(date);
+
+    days.push({
+      key,
+      isInMonth,
+      label: String(date.getDate()),
+      hasWorkout: isInMonth && workoutDateCounts[key] > 0,
+    });
+  }
+
+  return days;
+}
+
+function getWorkoutYear(workout: LoggedWorkout) {
+  return getWorkoutDateParts(workout).year;
+}
+
+function getWorkoutDateKey(workout: LoggedWorkout) {
+  const date = parseWorkoutDate(workout.date);
+  if (!date) return null;
+
+  return formatDateKey(date);
+}
+
+function getWorkoutDateParts(workout: LoggedWorkout): WorkoutDateParts {
+  const date = parseWorkoutDate(workout.date);
+
+  if (!date) {
+    return {
+      year: workout.year || "Unknown Year",
+      month: workout.month || "Unknown",
+      monthNumber: "unknown",
+      monthKey: `${workout.year || "Unknown Year"}-unknown`,
+    };
+  }
+
+  const year = date.getFullYear().toString();
+  const monthNumber = date.getMonth() + 1;
+  const month = date.toLocaleDateString("en-US", {
+    month: "long",
+  });
+  const monthKey = `${year}-${String(monthNumber).padStart(2, "0")}`;
+
+  return {
+    year,
+    month,
+    monthNumber: String(monthNumber).padStart(2, "0"),
+    monthKey,
+  };
+}
+
+function parseWorkoutDate(value: string) {
+  const trimmed = value.trim();
+  const slashMatch = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(trimmed);
+  if (slashMatch) {
+    const day = Number(slashMatch[1]);
+    const month = Number(slashMatch[2]);
+    const year = Number(slashMatch[3]);
+    const parsed = new Date(year, month - 1, day);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  const isoMatch = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(trimmed);
+  if (isoMatch) {
+    const year = Number(isoMatch[1]);
+    const month = Number(isoMatch[2]);
+    const day = Number(isoMatch[3]);
+    const parsed = new Date(year, month - 1, day);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  const parsed = new Date(trimmed);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function formatDateKey(date: Date) {
+  return [
     date.getFullYear(),
     String(date.getMonth() + 1).padStart(2, "0"),
     String(date.getDate()).padStart(2, "0"),
-    String(date.getHours()).padStart(2, "0"),
-    String(date.getMinutes()).padStart(2, "0"),
   ].join("-");
-  return `gym-tracker-backup-${value}`;
-}
-
-function hasExpectedBackupMarkers(text: string) {
-  return [
-    "categories",
-    "exercises",
-    "routines",
-    "routine_exercises",
-    "workouts",
-    "workout_exercises",
-    "workout_sets",
-  ].every((table) => text.includes(`# table: ${table}`));
-}
-
-function formatDatabaseSummary(summary: Record<string, number>) {
-  const labels: Record<string, string> = {
-    categories: "Categories",
-    exercises: "Exercises",
-    routines: "Routines",
-    routine_exercises: "Routine Exercises",
-    workouts: "Workouts",
-    workout_exercises: "Workout Exercises",
-    workout_sets: "Workout Sets",
-    body_stats: "Body Stats",
-  };
-
-  return Object.entries(labels)
-    .filter(([table]) => summary[table] !== undefined)
-    .map(([table, label]) => `${label}: ${summary[table]}`)
-    .join("\n");
 }
 
 const styles = StyleSheet.create({
@@ -529,7 +626,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 96,
+    paddingBottom: 156,
     paddingTop: 0,
   },
   stateText: {
@@ -537,6 +634,33 @@ const styles = StyleSheet.create({
     fontSize: 16,
     paddingHorizontal: spacing.xxl,
     paddingTop: spacing.xl,
+  },
+  headerIconButton: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    height: 40,
+    justifyContent: "center",
+    width: 40,
+  },
+  yearSeparator: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.md,
+    marginHorizontal: spacing.xxl,
+    marginBottom: spacing.lg,
+    marginTop: -5,
+  },
+  yearLine: {
+    backgroundColor: colors.borderMuted,
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
+  },
+  yearText: {
+    color: colors.accent,
+    fontSize: 14,
+    fontWeight: "800",
+    letterSpacing: 0.5,
   },
   entry: {
     flexDirection: "row",
@@ -567,7 +691,7 @@ const styles = StyleSheet.create({
     ...typography.dateMonth,
   },
   timelineLine: {
-    backgroundColor: colors.background,
+    backgroundColor: colors.borderMuted,
     flex: 1,
     marginTop: spacing.md,
     minHeight: 48,
@@ -579,8 +703,8 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     borderWidth: StyleSheet.hairlineWidth,
     flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    paddingVertical: 10, // Adjusted: Reduced vertical padding above/below
+    paddingHorizontal: 13,
     shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.16,
@@ -591,27 +715,33 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfacePressed,
   },
   cardHeader: {
-    alignItems: "flex-start",
+    alignItems: "center",
     flexDirection: "row",
     gap: spacing.md,
     justifyContent: "space-between",
-    marginBottom: spacing.sm,
+    marginBottom: 6, // Adjusted: Tightened space below header
   },
   workoutTitle: {
     color: colors.textPrimary,
     flex: 1,
     ...typography.workoutTitle,
+    fontSize: 16, // Adjusted: 10% smaller
+    lineHeight: 20, // Tighter line-height ensures exact center alignment
   },
   duration: {
     color: colors.textSecondary,
     backgroundColor: colors.border,
     borderRadius: radius.pill,
+    fontSize: 11, // Adjusted: 10% smaller
+    fontWeight: "800",
     letterSpacing: 0,
+    lineHeight: 14, // Tighter line-height
     marginTop: 0,
+    minWidth: 50, // Reduced minimum width slightly
     overflow: "hidden",
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    ...typography.duration,
+    paddingHorizontal: 8,
+    paddingVertical: 3, // Reduced padding
+    textAlign: "center",
   },
   draftBadge: {
     color: colors.accent,
@@ -619,12 +749,16 @@ const styles = StyleSheet.create({
     borderColor: "rgba(91, 212, 224, 0.35)",
     borderRadius: radius.pill,
     borderWidth: StyleSheet.hairlineWidth,
+    fontSize: 11, // Adjusted: 10% smaller
+    fontWeight: "800",
     letterSpacing: 0,
+    lineHeight: 14, // Tighter line-height
     marginTop: 0,
+    minWidth: 80, // Reduced minimum width
     overflow: "hidden",
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    ...typography.duration,
+    paddingHorizontal: 8,
+    paddingVertical: 3, // Reduced padding
+    textAlign: "center",
   },
   exerciseList: {
     gap: 0,
@@ -632,6 +766,7 @@ const styles = StyleSheet.create({
   exerciseText: {
     color: colors.textSecondary,
     ...typography.exercise,
+    fontSize: 13, // Adjusted: 10% smaller
   },
   floatingAddButton: {
     alignItems: "center",
@@ -710,27 +845,111 @@ const styles = StyleSheet.create({
     position: "absolute",
     width: 22,
   },
-  sheetAction: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 16,
-    minHeight: 48,
-  },
-  sheetActionDisabled: {
-    opacity: 0.55,
-  },
   sheetActionPressed: {
     opacity: animations.pressOpacity,
   },
-  sheetIcon: {
-    width: 34,
+  jumpList: {
+    maxHeight: 420,
   },
-  sheetText: {
+  jumpListContent: {
+    gap: spacing.lg,
+  },
+  jumpEmptyText: {
+    color: colors.textMuted,
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  calendarHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.card,
+    justifyContent: "space-between",
+  },
+  calendarNavButton: {
+    alignItems: "center",
+    backgroundColor: colors.background,
+    borderColor: colors.borderMuted,
+    borderRadius: radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    height: 42,
+    justifyContent: "center",
+    width: 42,
+  },
+  calendarNavDisabled: {
+    opacity: 0.35,
+  },
+  calendarTitleGroup: {
+    alignItems: "center",
+    flex: 1,
+    gap: spacing.xs,
+  },
+  calendarTitle: {
     color: colors.textPrimary,
-    fontSize: 17,
-    fontWeight: "500",
+    fontSize: 19,
+    fontWeight: "800",
+    letterSpacing: 0,
+    lineHeight: 24,
   },
-  deleteText: {
-    color: "#ffaaa1",
+  calendarSubtitle: {
+    color: colors.textMuted,
+    fontSize: 13,
+    fontWeight: "700",
+    letterSpacing: 0,
+  },
+  weekdayGrid: {
+    flexDirection: "row",
+  },
+  calendarWeekday: {
+    color: colors.textMuted,
+    flex: 1,
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 0,
+    lineHeight: 16,
+    textAlign: "center",
+  },
+  calendarGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+  },
+  calendarDay: {
+    alignItems: "center",
+    height: 44,
+    justifyContent: "center",
+    width: "14.285%",
+  },
+  calendarDayOutside: {
+    opacity: 0.25,
+  },
+  calendarDayActive: {
+    opacity: 1,
+  },
+  calendarDayText: {
+    color: colors.textSecondary,
+    fontSize: 16,
+    fontWeight: "700",
+    letterSpacing: 0,
+    lineHeight: 20,
+  },
+  calendarDayOutsideText: {
+    color: colors.textMuted,
+  },
+  calendarDayActiveText: {
+    color: colors.textPrimary,
+  },
+  calendarWorkoutDot: {
+    backgroundColor: colors.accent,
+    borderRadius: radius.circle,
+    height: 5,
+    marginTop: spacing.xs,
+    width: 5,
+  },
+  calendarHint: {
+    color: colors.textMuted,
+    fontSize: 13,
+    fontWeight: "600",
+    letterSpacing: 0,
+    lineHeight: 18,
+    textAlign: "center",
   },
 });

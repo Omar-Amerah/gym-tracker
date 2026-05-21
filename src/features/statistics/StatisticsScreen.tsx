@@ -1,4 +1,5 @@
 import { useFocusEffect } from "@react-navigation/native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import type { ReactNode } from "react";
 import { useCallback, useRef, useState } from "react";
 import {
@@ -8,11 +9,18 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 
 import { AppHeader } from "@/components/app-header";
+import { BottomSheet } from "@/components/bottom-sheet";
+import { DataBackupSheet } from "@/components/data-backup-sheet";
 import {
   getExerciseProgressOptions,
   getExerciseProgressStat,
@@ -49,6 +57,7 @@ import {
   formatRecordType,
   formatRecordValue,
   formatTrendMetricLabel,
+  formatTrendValue,
   formatVolumeKg,
   formatWeight,
   pluralise,
@@ -78,93 +87,87 @@ export function StatisticsScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isProgressLoading, setIsProgressLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [dataMenuOpen, setDataMenuOpen] = useState(false);
 
-  useFocusEffect(
-    useCallback(() => {
-      let mounted = true;
+  const loadStatistics = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
 
-      setIsLoading(true);
-      setError(null);
-
-      void Promise.all([
+    try {
+      const [
+        nextOverview,
+        nextTopExercises,
+        nextOptions,
+        nextWeeklySummary,
+        nextPersonalRecords,
+        nextBodyweightStats,
+      ] = await Promise.all([
         getStatsOverview(),
         getTopExercises(5),
         getExerciseProgressOptions(),
         getWeeklyTrainingSummary(4),
         getPersonalRecords(),
         getBodyweightStats(),
-      ])
-        .then(
-          async ([
-            nextOverview,
-            nextTopExercises,
-            nextOptions,
-            nextWeeklySummary,
-            nextPersonalRecords,
-            nextBodyweightStats,
-          ]) => {
-          const nextSelected =
-            nextOptions.find(
-              (option) => getExerciseOptionKey(option) === selectedKeyRef.current,
-            ) ??
-            nextOptions[0] ??
-            null;
-          const nextTrendMetric = getPreferredTrendMetric(
-            nextSelected?.exerciseType,
-          );
-          const nextProgress = nextSelected
-            ? await getExerciseProgressStat({
-                exerciseId: nextSelected.exerciseId,
-                exerciseName: nextSelected.exerciseName,
-              })
-            : null;
-          const nextTrend = nextSelected
-            ? await getExerciseTrend({
-                exerciseId: nextSelected.exerciseId,
-                exerciseName: nextSelected.exerciseName,
-                metric: nextTrendMetric,
-                limit: 20,
-              })
-            : [];
+      ]);
 
-          if (!mounted) return;
+      const nextSelected =
+        nextOptions.find(
+          (option) => getExerciseOptionKey(option) === selectedKeyRef.current,
+        ) ??
+        nextOptions[0] ??
+        null;
+      const nextTrendMetric = getPreferredTrendMetric(
+        nextSelected?.exerciseType,
+      );
+      const nextProgress = nextSelected
+        ? await getExerciseProgressStat({
+            exerciseId: nextSelected.exerciseId,
+            exerciseName: nextSelected.exerciseName,
+          })
+        : null;
+      const nextTrend = nextSelected
+        ? await getExerciseTrend({
+            exerciseId: nextSelected.exerciseId,
+            exerciseName: nextSelected.exerciseName,
+            metric: nextTrendMetric,
+            limit: 20,
+          })
+        : [];
 
-          selectedKeyRef.current = nextSelected
-            ? getExerciseOptionKey(nextSelected)
-            : null;
-          setOverview(nextOverview);
-          setTopExercises(nextTopExercises);
-          setProgressOptions(nextOptions);
-          setSelectedOption(nextSelected);
-          setProgressStat(nextProgress);
-          setTrendMetric(nextTrendMetric);
-          setTrendPoints(nextTrend);
-          setWeeklySummary(nextWeeklySummary);
-          setPersonalRecords(nextPersonalRecords);
-          setBodyweightStats(nextBodyweightStats);
-        })
-        .catch((loadError) => {
-          console.error("Failed to load statistics", loadError);
-          if (!mounted) return;
-          setOverview(null);
-          setTopExercises([]);
-          setProgressOptions([]);
-          setSelectedOption(null);
-          setProgressStat(null);
-          setTrendPoints([]);
-          setWeeklySummary([]);
-          setPersonalRecords([]);
-          setBodyweightStats(null);
-          setError("Could not load statistics.");
-        })
-        .finally(() => {
-          if (mounted) setIsLoading(false);
-        });
+      selectedKeyRef.current = nextSelected
+        ? getExerciseOptionKey(nextSelected)
+        : null;
+      setOverview(nextOverview);
+      setTopExercises(nextTopExercises);
+      setProgressOptions(nextOptions);
+      setSelectedOption(nextSelected);
+      setProgressStat(nextProgress);
+      setTrendMetric(nextTrendMetric);
+      setTrendPoints(nextTrend);
+      setWeeklySummary(nextWeeklySummary);
+      setPersonalRecords(nextPersonalRecords);
+      setBodyweightStats(nextBodyweightStats);
+    } catch (loadError) {
+      console.error("Failed to load statistics", loadError);
+      setOverview(null);
+      setTopExercises([]);
+      setProgressOptions([]);
+      setSelectedOption(null);
+      setProgressStat(null);
+      setTrendPoints([]);
+      setWeeklySummary([]);
+      setPersonalRecords([]);
+      setBodyweightStats(null);
+      setError("Could not load statistics.");
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
-      return () => {
-        mounted = false;
-      };
-    }, []),
+  useFocusEffect(
+    useCallback(() => {
+      void loadStatistics();
+    }, [loadStatistics]),
   );
 
   const selectExercise = useCallback((option: ExerciseProgressOption) => {
@@ -203,7 +206,10 @@ export function StatisticsScreen() {
   return (
     <SafeAreaView edges={["top"]} style={styles.safeArea}>
       <View style={styles.screenRoot}>
-        <AppHeader title="Statistics" />
+        <AppHeader
+          onMenuPress={() => setDataMenuOpen(true)}
+          title="Statistics"
+        />
 
         <ScrollView
           contentContainerStyle={styles.scrollContent}
@@ -360,6 +366,12 @@ export function StatisticsScreen() {
             </>
           ) : null}
         </ScrollView>
+
+        <DataBackupSheet
+          onClose={() => setDataMenuOpen(false)}
+          onDataChanged={loadStatistics}
+          visible={dataMenuOpen}
+        />
       </View>
     </SafeAreaView>
   );
@@ -454,6 +466,12 @@ function ExerciseSelector({
   options: ExerciseProgressOption[];
   selectedOption: ExerciseProgressOption | null;
 }) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [exerciseSearch, setExerciseSearch] = useState("");
+  const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
+  const pickerMaxHeight = Math.min(520, windowHeight * 0.62);
+
   if (options.length === 0) {
     return (
       <View style={styles.emptyCard}>
@@ -465,41 +483,126 @@ function ExerciseSelector({
   const selectedKey = selectedOption
     ? getExerciseOptionKey(selectedOption)
     : null;
+  const normalizedSearch = exerciseSearch.trim().toLowerCase();
+  const filteredOptions = (() => {
+    const selected = selectedKey
+      ? options.find((option) => getExerciseOptionKey(option) === selectedKey)
+      : null;
+    const matches = normalizedSearch
+      ? options.filter((option) =>
+          option.exerciseName.toLowerCase().includes(normalizedSearch),
+        )
+      : options;
+
+    if (!selected) return matches;
+
+    return [
+      selected,
+      ...matches.filter(
+        (option) => getExerciseOptionKey(option) !== selectedKey,
+      ),
+    ];
+  })();
 
   return (
-    <ScrollView
-      contentContainerStyle={styles.chipRow}
-      horizontal
-      showsHorizontalScrollIndicator={false}
-    >
-      {options.slice(0, 12).map((option) => {
-        const key = getExerciseOptionKey(option);
-        const selected = key === selectedKey;
+    <>
+      <Pressable
+        accessibilityRole="button"
+        onPress={() => setPickerOpen(true)}
+        style={({ pressed }) => [
+          styles.exercisePickerButton,
+          pressed && styles.pressed,
+        ]}
+      >
+        <View style={styles.exercisePickerTextGroup}>
+          <Text style={styles.exercisePickerLabel}>Selected exercise</Text>
+          <Text numberOfLines={1} style={styles.exercisePickerValue}>
+            {selectedOption?.exerciseName ?? "Select exercise"}
+          </Text>
+        </View>
+        <MaterialCommunityIcons
+          color={colors.accent}
+          name="chevron-down"
+          size={23}
+        />
+      </Pressable>
 
-        return (
-          <Pressable
-            accessibilityRole="button"
-            key={key}
-            onPress={() => onSelect(option)}
-            style={({ pressed }) => [
-              styles.exerciseChip,
-              selected && styles.exerciseChipSelected,
-              pressed && styles.pressed,
-            ]}
-          >
-            <Text
-              numberOfLines={1}
-              style={[
-                styles.exerciseChipText,
-                selected && styles.exerciseChipTextSelected,
-              ]}
-            >
-              {option.exerciseName}
-            </Text>
-          </Pressable>
-        );
-      })}
-    </ScrollView>
+      <BottomSheet
+        maxHeight="82%"
+        onClose={() => setPickerOpen(false)}
+        title="Select Exercise"
+        visible={pickerOpen}
+      >
+        <View style={styles.exerciseSearchWrap}>
+          <MaterialCommunityIcons
+            color={colors.textMuted}
+            name="magnify"
+            size={20}
+          />
+          <TextInput
+            autoCapitalize="none"
+            autoCorrect={false}
+            onChangeText={setExerciseSearch}
+            placeholder="Search exercises"
+            placeholderTextColor={colors.textMuted}
+            style={styles.exerciseSearchInput}
+            value={exerciseSearch}
+          />
+        </View>
+
+        <ScrollView
+          contentContainerStyle={[
+            styles.exercisePickerListContent,
+            { paddingBottom: insets.bottom + spacing.xxxl },
+          ]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          style={[styles.exercisePickerList, { maxHeight: pickerMaxHeight }]}
+        >
+          {filteredOptions.length === 0 ? (
+            <Text style={styles.emptyText}>No matching exercises.</Text>
+          ) : null}
+
+          {filteredOptions.map((option) => {
+            const key = getExerciseOptionKey(option);
+            const selected = key === selectedKey;
+
+            return (
+              <Pressable
+                accessibilityRole="button"
+                key={key}
+                onPress={() => {
+                  onSelect(option);
+                  setPickerOpen(false);
+                  setExerciseSearch("");
+                }}
+                style={({ pressed }) => [
+                  styles.exercisePickerRow,
+                  selected && styles.exercisePickerRowSelected,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <View style={styles.exercisePickerRowText}>
+                  <Text numberOfLines={1} style={styles.exercisePickerRowName}>
+                    {option.exerciseName}
+                  </Text>
+                  <Text style={styles.exercisePickerRowMeta}>
+                    Last: {formatDateShort(option.lastCompletedDate)}
+                  </Text>
+                </View>
+                {selected ? (
+                  <MaterialCommunityIcons
+                    color={colors.accent}
+                    name="check"
+                    size={21}
+                  />
+                ) : null}
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      </BottomSheet>
+    </>
   );
 }
 
@@ -551,17 +654,14 @@ function TrendCard({
   metric: ExerciseTrendMetric;
   points: ExerciseTrendPoint[];
 }) {
+  const summary = getTrendSummary(points, metric);
+
   return (
     <View style={styles.progressCard}>
       <View style={styles.cardTitleRow}>
         <Text style={styles.progressTitle}>
           {formatTrendMetricLabel(metric)}
         </Text>
-        {points.length >= 2 ? (
-          <Text style={styles.rowDate}>
-            {points[points.length - 1]?.label ?? "--"}
-          </Text>
-        ) : null}
       </View>
 
       {points.length < 2 ? (
@@ -569,18 +669,61 @@ function TrendCard({
           Complete this exercise more times to see a trend.
         </Text>
       ) : (
-        <SimpleTrendChart points={points} />
+        <>
+          <View style={styles.trendSummaryGrid}>
+            <TrendSummaryItem
+              label="Latest"
+              value={formatTrendValue(metric, summary.latestValue)}
+            />
+            <TrendSummaryItem
+              label="Best"
+              value={formatTrendValue(metric, summary.bestValue)}
+            />
+            <TrendSummaryItem
+              label="Change"
+              value={formatTrendChange(metric, summary.changeValue)}
+            />
+          </View>
+
+          {summary.isFlat ? (
+            <Text style={styles.flatTrendText}>Flat trend</Text>
+          ) : null}
+
+          <SimpleTrendChart metric={metric} points={points} summary={summary} />
+        </>
       )}
     </View>
   );
 }
 
-function SimpleTrendChart({ points }: { points: ExerciseTrendPoint[] }) {
+function TrendSummaryItem({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <View style={styles.trendSummaryItem}>
+      <Text style={styles.trendSummaryLabel}>{label}</Text>
+      <Text numberOfLines={1} style={styles.trendSummaryValue}>
+        {value}
+      </Text>
+    </View>
+  );
+}
+
+function SimpleTrendChart({
+  metric,
+  points,
+  summary,
+}: {
+  metric: ExerciseTrendMetric;
+  points: ExerciseTrendPoint[];
+  summary: TrendSummary;
+}) {
   const [width, setWidth] = useState(0);
-  const values = points.map((point) => point.value);
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = Math.max(1, max - min);
+  const range = Math.max(1, summary.maxValue - summary.minValue);
 
   function onLayout(event: LayoutChangeEvent) {
     setWidth(event.nativeEvent.layout.width);
@@ -588,23 +731,54 @@ function SimpleTrendChart({ points }: { points: ExerciseTrendPoint[] }) {
 
   return (
     <View onLayout={onLayout} style={styles.chart}>
-      <View style={styles.chartPlot}>
-        {points.map((point, index) => {
-          const barHeight = 18 + ((point.value - min) / range) * 92;
-          return (
-            <View
-              key={`${point.workoutId}-${index}`}
-              style={styles.chartColumn}
-            >
-              <View style={[styles.chartBar, { height: barHeight }]} />
-            </View>
-          );
-        })}
+      <View style={styles.chartAxisRow}>
+        <View style={styles.chartYAxis}>
+          <Text style={styles.chartAxisLabel}>
+            {formatTrendValue(metric, summary.maxValue)}
+          </Text>
+          <Text style={styles.chartAxisLabel}>
+            {formatTrendValue(metric, summary.minValue)}
+          </Text>
+        </View>
+
+        <View style={styles.chartPlot}>
+          {points.map((point, index) => {
+            const barHeight = summary.isFlat
+              ? 64
+              : 18 + ((point.value - summary.minValue) / range) * 92;
+            const isLatest = index === points.length - 1;
+            const isFirst = index === 0;
+
+            return (
+              <View
+                key={`${point.workoutId}-${index}`}
+                style={styles.chartColumn}
+              >
+                {(isFirst || isLatest) && width > 0 ? (
+                  <Text numberOfLines={1} style={styles.chartPointLabel}>
+                    {formatTrendValue(metric, point.value)}
+                  </Text>
+                ) : null}
+                <View
+                  style={[
+                    styles.chartBar,
+                    isLatest && styles.chartBarLatest,
+                    { height: barHeight },
+                  ]}
+                />
+              </View>
+            );
+          })}
+        </View>
       </View>
       <View style={styles.chartFooter}>
-        <Text style={styles.chartLabel}>{points[0]?.date ?? ""}</Text>
         <Text style={styles.chartLabel}>
-          {width > 0 ? points[points.length - 1]?.date : ""}
+          {formatDateShort(points[0]?.date ?? null)}
+        </Text>
+        <Text style={styles.chartLabel}>
+          {width > 0
+            ? formatDateShort(points[points.length - 1]?.date ?? null)
+            : ""}
         </Text>
       </View>
     </View>
@@ -826,6 +1000,47 @@ function BodyweightCard({
       ) : null}
     </View>
   );
+}
+
+type TrendSummary = {
+  bestValue: number;
+  changeValue: number;
+  firstValue: number;
+  isFlat: boolean;
+  latestValue: number;
+  maxValue: number;
+  minValue: number;
+};
+
+function getTrendSummary(
+  points: ExerciseTrendPoint[],
+  metric: ExerciseTrendMetric,
+): TrendSummary {
+  const values = points.map((point) => point.value);
+  const firstValue = values[0] ?? 0;
+  const latestValue = values[values.length - 1] ?? 0;
+  const minValue = Math.min(...values);
+  const maxValue = Math.max(...values);
+  const lowerIsBetter = metric === "pace";
+
+  return {
+    firstValue,
+    latestValue,
+    bestValue: lowerIsBetter ? minValue : maxValue,
+    changeValue: latestValue - firstValue,
+    minValue,
+    maxValue,
+    isFlat: minValue === maxValue,
+  };
+}
+
+function formatTrendChange(metric: ExerciseTrendMetric, value: number) {
+  if (value === 0) return "0";
+  const prefix = value > 0 ? "+" : "";
+  if (metric === "bestTime" || metric === "pace") {
+    return `${prefix}${formatTrendValue(metric, Math.abs(value))}`;
+  }
+  return `${prefix}${formatTrendValue(metric, value)}`;
 }
 
 function getExerciseOptionKey(option: ExerciseProgressOption) {
@@ -1051,6 +1266,93 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     paddingRight: spacing.xxl,
   },
+  exercisePickerButton: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.md,
+    justifyContent: "space-between",
+    minHeight: 54,
+    paddingHorizontal: spacing.xxl,
+    paddingVertical: spacing.md,
+  },
+  exercisePickerTextGroup: {
+    flex: 1,
+    gap: spacing.xs,
+  },
+  exercisePickerLabel: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0,
+    lineHeight: 14,
+  },
+  exercisePickerValue: {
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontWeight: "800",
+    letterSpacing: 0,
+    lineHeight: 21,
+  },
+  exerciseSearchWrap: {
+    alignItems: "center",
+    backgroundColor: colors.background,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.md,
+    minHeight: 46,
+    paddingHorizontal: spacing.card,
+  },
+  exerciseSearchInput: {
+    color: colors.textPrimary,
+    flex: 1,
+    fontSize: 15,
+    letterSpacing: 0,
+    minHeight: 44,
+    paddingVertical: 0,
+  },
+  exercisePickerList: {
+    flexGrow: 0,
+  },
+  exercisePickerListContent: {
+    paddingBottom: spacing.xxl,
+  },
+  exercisePickerRow: {
+    alignItems: "center",
+    borderBottomColor: colors.borderMuted,
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    gap: spacing.md,
+    minHeight: 58,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+  },
+  exercisePickerRowSelected: {
+    backgroundColor: "rgba(91, 212, 224, 0.08)",
+  },
+  exercisePickerRowText: {
+    flex: 1,
+    gap: spacing.xs,
+  },
+  exercisePickerRowName: {
+    color: colors.textPrimary,
+    fontSize: 15,
+    fontWeight: "700",
+    letterSpacing: 0,
+    lineHeight: 20,
+  },
+  exercisePickerRowMeta: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontWeight: "600",
+    letterSpacing: 0,
+    lineHeight: 15,
+  },
   exerciseChip: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
@@ -1106,8 +1408,60 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     justifyContent: "space-between",
   },
+  trendSummaryGrid: {
+    flexDirection: "row",
+    gap: spacing.md,
+  },
+  trendSummaryItem: {
+    backgroundColor: colors.background,
+    borderColor: colors.borderMuted,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flex: 1,
+    gap: spacing.xs,
+    minHeight: 58,
+    padding: spacing.md,
+  },
+  trendSummaryLabel: {
+    color: colors.textMuted,
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 0,
+    lineHeight: 13,
+  },
+  trendSummaryValue: {
+    color: colors.textPrimary,
+    fontSize: 13,
+    fontWeight: "800",
+    letterSpacing: 0,
+    lineHeight: 17,
+  },
+  flatTrendText: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0,
+    lineHeight: 16,
+  },
   chart: {
     gap: spacing.md,
+  },
+  chartAxisRow: {
+    flexDirection: "row",
+    gap: spacing.md,
+  },
+  chartYAxis: {
+    justifyContent: "space-between",
+    paddingVertical: spacing.card,
+    width: 62,
+  },
+  chartAxisLabel: {
+    color: colors.textMuted,
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 0,
+    lineHeight: 13,
+    textAlign: "right",
   },
   chartPlot: {
     alignItems: "flex-end",
@@ -1115,6 +1469,7 @@ const styles = StyleSheet.create({
     borderColor: colors.borderMuted,
     borderRadius: radius.md,
     borderWidth: 1,
+    flex: 1,
     flexDirection: "row",
     gap: spacing.xs,
     height: 150,
@@ -1126,12 +1481,25 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "flex-end",
   },
+  chartPointLabel: {
+    color: colors.textMuted,
+    fontSize: 9,
+    fontWeight: "800",
+    letterSpacing: 0,
+    lineHeight: 11,
+    marginBottom: spacing.xs,
+    maxWidth: 54,
+    textAlign: "center",
+  },
   chartBar: {
     backgroundColor: colors.accent,
     borderRadius: radius.pill,
     minHeight: 4,
     opacity: 0.86,
     width: "62%",
+  },
+  chartBarLatest: {
+    opacity: 1,
   },
   chartFooter: {
     flexDirection: "row",

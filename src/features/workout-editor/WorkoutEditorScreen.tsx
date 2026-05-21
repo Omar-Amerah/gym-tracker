@@ -688,10 +688,6 @@ export function WorkoutEditorScreen() {
     }, 180);
   }, []);
 
-  const showFutureActionAlert = useCallback((message: string) => {
-    Alert.alert("Coming soon", message);
-  }, []);
-
   const openExerciseHistory = useCallback(
     (exercise: ActiveWorkoutExercise | null) => {
       if (!exercise) return;
@@ -890,7 +886,6 @@ export function WorkoutEditorScreen() {
                 onOpenExerciseOptions={setSelectedExerciseId}
                 onOpenSetOptions={openSetOptions}
                 onSetNoteHeight={updateSetNoteHeight}
-                onShowFutureAction={showFutureActionAlert}
                 onUpdateExerciseNote={updateExerciseNote}
                 onUpdateSetField={updateSetField}
                 onUpdateSetTimeField={updateSetTimeField}
@@ -963,11 +958,6 @@ export function WorkoutEditorScreen() {
             if (!selectedExerciseId) return;
             focusExerciseNote(selectedExerciseId);
           }}
-          onCharts={() =>
-            showFutureActionAlert(
-              "Charts will be available after workouts are saved.",
-            )
-          }
           onClose={() => setSelectedExerciseId(null)}
           onDelete={() => {
             if (!selectedExercise) return;
@@ -976,16 +966,8 @@ export function WorkoutEditorScreen() {
           onHistory={() =>
             openExerciseHistory(selectedExercise)
           }
-          onPersonalRecords={() =>
-            showFutureActionAlert(
-              "Personal records will be available after workouts are saved.",
-            )
-          }
           onReorder={openExerciseReorder}
           onReplace={openExerciseReplacement}
-          onSettings={() =>
-            showFutureActionAlert("Exercise settings will be added later.")
-          }
           selectedExercise={selectedExercise}
           visible={selectedExerciseId !== null}
         />

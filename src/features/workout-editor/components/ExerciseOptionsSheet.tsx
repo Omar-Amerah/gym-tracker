@@ -8,28 +8,22 @@ import { ExerciseQuickAction, SheetListAction } from "./SheetActions";
 
 type ExerciseOptionsSheetProps = {
   onAddNote: () => void;
-  onCharts: () => void;
   onClose: () => void;
   onDelete: () => void;
   onHistory: () => void;
-  onPersonalRecords: () => void;
   onReorder: () => void;
   onReplace: () => void;
-  onSettings: () => void;
   selectedExercise: ActiveWorkoutExercise | null;
   visible: boolean;
 };
 
 export function ExerciseOptionsSheet({
   onAddNote,
-  onCharts,
   onClose,
   onDelete,
   onHistory,
-  onPersonalRecords,
   onReorder,
   onReplace,
-  onSettings,
   selectedExercise,
   visible,
 }: ExerciseOptionsSheetProps) {
@@ -65,24 +59,6 @@ export function ExerciseOptionsSheet({
         icon="history"
         label="History"
         onPress={onHistory}
-      />
-      <SheetListAction
-        icon="chart-line"
-        label="Charts"
-        locked
-        onPress={onCharts}
-      />
-      <SheetListAction
-        icon="trophy-outline"
-        label="Personal Records"
-        locked
-        onPress={onPersonalRecords}
-      />
-      <SheetListAction
-        icon="cog-outline"
-        label="Settings"
-        locked
-        onPress={onSettings}
       />
     </BottomSheet>
   );

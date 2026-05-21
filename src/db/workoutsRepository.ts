@@ -58,6 +58,7 @@ export type SavedWorkout = {
 };
 
 export type LoggedWorkout = {
+  date: string;
   day: string;
   durationMinutes: number | null;
   exercises: string[];
@@ -66,6 +67,7 @@ export type LoggedWorkout = {
   name: string;
   status: WorkoutStatus;
   weekday: string;
+  year: string;
 };
 
 export type PreviousExerciseSet = {
@@ -451,7 +453,13 @@ export async function listCompletedWorkouts(): Promise<LoggedWorkout[]> {
     `SELECT id, name, date, durationMinutes, status
      FROM workouts
      WHERE status = 'completed'
-     ORDER BY createdAt DESC`,
+     ORDER BY
+       CASE
+         WHEN instr(date, '/') > 0 THEN substr(date, 7, 4) || '-' || substr(date, 4, 2) || '-' || substr(date, 1, 2)
+         ELSE date
+       END DESC,
+       startTime DESC,
+       createdAt DESC`,
   );
 
   if (workouts.length === 0) return [];
@@ -492,6 +500,7 @@ function formatLoggedWorkout(
   return {
     id: workout.id,
     name: workout.name.trim() || "Untitled Workout",
+    date: workout.date,
     durationMinutes: workout.durationMinutes,
     status: workout.status ?? "completed",
     ...formatLogDate(workout.date),
@@ -777,11 +786,21 @@ function formatLogDate(value: string) {
   const [day, month, year] = value.split("/").map(Number);
   const parsed =
     day && month && year ? new Date(year, month - 1, day) : new Date(value);
-  const date = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+  if (Number.isNaN(parsed.getTime())) {
+    return {
+      day: "--",
+      month: "Unknown",
+      weekday: "---",
+      year: "Unknown Year",
+    };
+  }
+
+  const date = parsed;
 
   return {
     day: date.toLocaleDateString("en-US", { day: "2-digit" }),
     month: date.toLocaleDateString("en-US", { month: "short" }),
     weekday: date.toLocaleDateString("en-US", { weekday: "short" }),
+    year: date.getFullYear().toString(),
   };
 }

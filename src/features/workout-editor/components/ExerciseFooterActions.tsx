@@ -9,14 +9,12 @@ import { styles } from "../styles";
 type ExerciseFooterActionsProps = {
   exerciseName: string;
   onAddSet: () => void;
-  onCharts: () => void;
   onHistory: () => void;
 };
 
 export const ExerciseFooterActions = memo(function ExerciseFooterActions({
   exerciseName,
   onAddSet,
-  onCharts,
   onHistory,
 }: ExerciseFooterActionsProps) {
   return (
@@ -43,21 +41,6 @@ export const ExerciseFooterActions = memo(function ExerciseFooterActions({
           <MaterialCommunityIcons
             color={colors.accent}
             name="history"
-            size={22}
-          />
-        </Pressable>
-        <Pressable
-          accessibilityLabel={`${exerciseName} charts`}
-          accessibilityRole="button"
-          onPress={onCharts}
-          style={({ pressed }) => [
-            styles.exerciseIconButton,
-            pressed && styles.pressed,
-          ]}
-        >
-          <MaterialCommunityIcons
-            color={colors.accent}
-            name="chart-line"
             size={22}
           />
         </Pressable>

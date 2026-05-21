@@ -23,7 +23,6 @@ type ExerciseSectionProps = {
   onOpenExerciseOptions: (exerciseId: string) => void;
   onOpenSetOptions: (exerciseId: string, setId: string) => void;
   onSetNoteHeight: (setId: string, height: number) => void;
-  onShowFutureAction: (message: string) => void;
   onUpdateExerciseNote: (exerciseId: string, value: string) => void;
   onUpdateSetField: (
     exerciseId: string,
@@ -52,7 +51,6 @@ export const ExerciseSection = memo(function ExerciseSection({
   onOpenExerciseOptions,
   onOpenSetOptions,
   onSetNoteHeight,
-  onShowFutureAction,
   onUpdateExerciseNote,
   onUpdateSetField,
   onUpdateSetTimeField,
@@ -153,11 +151,6 @@ export const ExerciseSection = memo(function ExerciseSection({
       <ExerciseFooterActions
         exerciseName={exercise.name}
         onAddSet={() => onAddSet(exercise.id)}
-        onCharts={() =>
-          onShowFutureAction(
-            "Charts will be available after workouts are saved.",
-          )
-        }
         onHistory={() => onHistory(exercise)}
       />
     </View>

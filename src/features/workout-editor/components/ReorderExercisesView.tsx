@@ -1,5 +1,5 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Animated, PanResponder, Pressable, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -92,13 +92,13 @@ function ReorderWorkoutRow({
           }
         },
         onPanResponderRelease: () => {
-          dragY.setValue(0);
           const finalHover =
             gestureStateRef.current.hoverIndex ?? gestureStateRef.current.index;
           gestureStateRef.current.onDrop(
             gestureStateRef.current.index,
             finalHover,
           );
+          requestAnimationFrame(() => dragY.setValue(0));
         },
         onPanResponderTerminate: () => {
           dragY.setValue(0);
@@ -144,6 +144,24 @@ export function ReorderExercisesView({
   const [hoverExerciseIndex, setHoverExerciseIndex] = useState<number | null>(
     null,
   );
+  const [displayExercises, setDisplayExercises] =
+    useState<ActiveWorkoutExercise[]>(exercises);
+
+  useEffect(() => {
+    if (draggingExerciseIndex === null) {
+      setDisplayExercises(exercises);
+    }
+  }, [draggingExerciseIndex, exercises]);
+
+  function moveDisplayExercise(fromIdx: number, toIdx: number) {
+    const nextExercises = [...displayExercises];
+    const [movedExercise] = nextExercises.splice(fromIdx, 1);
+    if (!movedExercise) return displayExercises;
+
+    const boundedIndex = Math.max(0, Math.min(toIdx, nextExercises.length));
+    nextExercises.splice(boundedIndex, 0, movedExercise);
+    return nextExercises;
+  }
 
   return (
     <SafeAreaView edges={["top", "bottom"]} style={styles.safeArea}>
@@ -177,14 +195,14 @@ export function ReorderExercisesView({
         </View>
 
         <View style={styles.reorderList}>
-          {exercises.map((exercise, index) => (
+          {displayExercises.map((exercise, index) => (
             <ReorderWorkoutRow
               key={exercise.id}
               draggingIndex={draggingExerciseIndex}
               exercise={exercise}
               hoverIndex={hoverExerciseIndex}
               index={index}
-              itemCount={exercises.length}
+              itemCount={displayExercises.length}
               onDragStart={(idx) => {
                 if (draggingExerciseIndex !== null) return;
                 setDraggingExerciseIndex(idx);
@@ -193,8 +211,19 @@ export function ReorderExercisesView({
               onHoverIndexChange={setHoverExerciseIndex}
               onDrop={(fromIdx, toIdx) => {
                 if (fromIdx !== toIdx) {
-                  onMoveExerciseToIndex(exercises[fromIdx].id, toIdx);
+                  const movedExercise = displayExercises[fromIdx];
+                  const nextExercises = moveDisplayExercise(fromIdx, toIdx);
+
+                  setDisplayExercises(nextExercises);
+                  setDraggingExerciseIndex(null);
+                  setHoverExerciseIndex(null);
+
+                  if (movedExercise) {
+                    onMoveExerciseToIndex(movedExercise.id, toIdx);
+                  }
+                  return;
                 }
+
                 setDraggingExerciseIndex(null);
                 setHoverExerciseIndex(null);
               }}

@@ -126,6 +126,33 @@ export function formatTrendMetricLabel(metric: ExerciseTrendMetric) {
   }
 }
 
+export function formatTrendValue(
+  metric: ExerciseTrendMetric,
+  value: number | null | undefined,
+) {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return "--";
+  }
+
+  switch (metric) {
+    case "estimated1RM":
+    case "bestWeight":
+      return formatWeightKg(value);
+    case "volume":
+      return formatVolumeKg(value);
+    case "bestReps":
+      return `${formatNumber(value)} reps`;
+    case "bestTime":
+      return formatDurationSeconds(Math.round(value));
+    case "distance":
+      return formatDistance(value);
+    case "pace":
+      return formatPace(value);
+    default:
+      return formatNumber(value);
+  }
+}
+
 export function calculateEstimatedOneRepMax(kg: number, reps: number) {
   if (kg <= 0 || reps <= 0) return null;
   return Math.round(kg * (1 + reps / 30) * 10) / 10;

@@ -14,6 +14,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AppHeader } from "@/components/app-header";
 import { BottomSheet } from "@/components/bottom-sheet";
+import { DataBackupSheet } from "@/components/data-backup-sheet";
 import { useRoutines } from "@/state/routines";
 import { animations } from "@/theme/animations";
 import { colors } from "@/theme/colors";
@@ -27,10 +28,11 @@ export default function RoutinesScreen() {
     deleteRoutine,
     duplicateRoutine,
     isLoading,
+    refreshRoutines,
     routines,
     setActiveRoutineId,
   } = useRoutines();
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [dataMenuOpen, setDataMenuOpen] = useState(false);
   const [isCreatingRoutine, setIsCreatingRoutine] = useState(false);
   const [selectedRoutineId, setSelectedRoutineId] = useState<string | null>(
     null,
@@ -75,7 +77,10 @@ export default function RoutinesScreen() {
   return (
     <SafeAreaView edges={["top"]} style={styles.safeArea}>
       <View style={styles.screenRoot}>
-        <AppHeader onMorePress={() => setMenuOpen(true)} title="Routines" />
+        <AppHeader
+          onMenuPress={() => setDataMenuOpen(true)}
+          title="Routines"
+        />
 
         <ScrollView
           contentContainerStyle={styles.scrollContent}
@@ -115,6 +120,14 @@ export default function RoutinesScreen() {
             {isLoading ? (
               <Text style={styles.emptyText}>Loading...</Text>
             ) : null}
+            {!isLoading && routines.length === 0 ? (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyTitle}>Add a routine</Text>
+                <Text style={styles.emptyText}>
+                  Create your first routine to start building workouts.
+                </Text>
+              </View>
+            ) : null}
           </View>
         </ScrollView>
 
@@ -135,25 +148,11 @@ export default function RoutinesScreen() {
           </View>
         </Pressable>
 
-        {/* Global Menu Bottom Sheet */}
-        <BottomSheet onClose={() => setMenuOpen(false)} visible={menuOpen}>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => {
-              setMenuOpen(false);
-              router.push("/reorder-routines");
-            }}
-            style={styles.sheetAction}
-          >
-            <MaterialCommunityIcons
-              color={colors.textPrimary}
-              name="sort"
-              size={24}
-              style={styles.sheetIcon}
-            />
-            <Text style={styles.sheetText}>Reorder</Text>
-          </Pressable>
-        </BottomSheet>
+        <DataBackupSheet
+          onClose={() => setDataMenuOpen(false)}
+          onDataChanged={refreshRoutines}
+          visible={dataMenuOpen}
+        />
 
         {/* Selected Routine Options Bottom Sheet */}
         <BottomSheet
@@ -275,8 +274,22 @@ const styles = StyleSheet.create({
   emptyText: {
     color: colors.textSecondary,
     fontSize: 16,
-    paddingTop: 24,
     textAlign: "center",
+  },
+  emptyState: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    gap: spacing.sm,
+    padding: spacing.xxxl,
+  },
+  emptyTitle: {
+    color: colors.textPrimary,
+    fontSize: 20,
+    fontWeight: "700",
+    letterSpacing: 0,
   },
   rowMenu: {
     alignItems: "center",
