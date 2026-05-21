@@ -27,8 +27,11 @@ export default function LogScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { refreshRoutines } = useRoutines();
+
   const scrollViewRef = useRef<ScrollView | null>(null);
-  const datePositionsRef = useRef<Record<string, number>>({});
+  const scrollYRef = useRef(0);
+  const dateRowRefs = useRef<Record<string, View | null>>({});
+
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isStartingWorkout, setIsStartingWorkout] = useState(false);
@@ -39,6 +42,7 @@ export default function LogScreen() {
   >(null);
   const [activeDraft, setActiveDraft] = useState<LoggedWorkout | null>(null);
   const [workouts, setWorkouts] = useState<LoggedWorkout[]>([]);
+
   const visibleWorkouts = useMemo(
     () => (activeDraft ? [activeDraft, ...workouts] : workouts),
     [activeDraft, workouts],
@@ -61,7 +65,7 @@ export default function LogScreen() {
     : [];
 
   useEffect(() => {
-    datePositionsRef.current = {};
+    dateRowRefs.current = {};
   }, [activeDraft?.id, workouts]);
 
   useEffect(() => {
@@ -127,6 +131,32 @@ export default function LogScreen() {
     await Promise.all([loadLogData(), refreshRoutines()]);
   }, [loadLogData, refreshRoutines]);
 
+  const scrollToDateKey = useCallback(
+    (dateKey: string) => {
+      const node = dateRowRefs.current[dateKey];
+      setJumpSheetOpen(false);
+
+      if (!node) {
+        console.warn("No row ref for date", dateKey);
+        return;
+      }
+
+      setTimeout(() => {
+        node.measureInWindow((_x, y) => {
+          const targetScreenY = insets.top + 100; // roughly below the header
+          const delta = y - targetScreenY;
+          const nextScrollY = Math.max(0, scrollYRef.current + delta);
+
+          scrollViewRef.current?.scrollTo({
+            y: nextScrollY,
+            animated: true,
+          });
+        });
+      }, animations.sheetDuration + 40);
+    },
+    [insets.top],
+  );
+
   return (
     <SafeAreaView edges={["top"]} style={styles.safeArea}>
       <View style={styles.screenRoot}>
@@ -156,6 +186,10 @@ export default function LogScreen() {
 
         <ScrollView
           ref={scrollViewRef}
+          onScroll={(event) => {
+            scrollYRef.current = event.nativeEvent.contentOffset.y;
+          }}
+          scrollEventThrottle={16}
           contentContainerStyle={styles.scrollContent}
           style={styles.scroll}
           showsVerticalScrollIndicator={false}
@@ -189,10 +223,10 @@ export default function LogScreen() {
                 ) : null}
 
                 <View
-                  onLayout={(event) => {
+                  collapsable={false}
+                  ref={(node) => {
                     if (dateKey && isFirstOfDate) {
-                      datePositionsRef.current[dateKey] =
-                        event.nativeEvent.layout.y;
+                      dateRowRefs.current[dateKey] = node;
                     }
                   }}
                   style={styles.entry}
@@ -403,27 +437,7 @@ export default function LogScreen() {
                       accessibilityRole={day.hasWorkout ? "button" : undefined}
                       disabled={!day.hasWorkout}
                       key={day.key}
-                      onPress={() => {
-                        const measuredY = datePositionsRef.current[day.key];
-                        const fallbackY = getEstimatedDateScrollY(
-                          visibleWorkouts,
-                          day.key,
-                        );
-                        const nextY =
-                          typeof measuredY === "number"
-                            ? measuredY
-                            : fallbackY;
-                        setJumpSheetOpen(false);
-                        if (typeof nextY !== "number") {
-                          return;
-                        }
-                        setTimeout(() => {
-                          scrollViewRef.current?.scrollTo({
-                            y: Math.max(0, nextY - 12),
-                            animated: true,
-                          });
-                        }, animations.sheetDuration + 40);
-                      }}
+                      onPress={() => scrollToDateKey(day.key)}
                       style={({ pressed }) => [
                         styles.calendarDay,
                         !day.isInMonth && styles.calendarDayOutside,
@@ -515,26 +529,6 @@ function buildWorkoutDateCounts(workouts: LoggedWorkout[]) {
   }
 
   return counts;
-}
-
-function getEstimatedDateScrollY(workouts: LoggedWorkout[], dateKey: string) {
-  const index = workouts.findIndex(
-    (workout) => getWorkoutDateKey(workout) === dateKey,
-  );
-  if (index < 0) return null;
-
-  const estimatedEntryHeight = 168;
-  const estimatedYearSeparatorHeight = 40;
-  let yearSeparatorsBefore = 0;
-
-  for (let currentIndex = 1; currentIndex <= index; currentIndex += 1) {
-    const previousYear = getWorkoutYear(workouts[currentIndex - 1]);
-    const currentYear = getWorkoutYear(workouts[currentIndex]);
-    if (previousYear !== currentYear) yearSeparatorsBefore += 1;
-  }
-
-  return index * estimatedEntryHeight +
-    yearSeparatorsBefore * estimatedYearSeparatorHeight;
 }
 
 function buildCalendarDays(
@@ -730,7 +724,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     borderWidth: StyleSheet.hairlineWidth,
     flex: 1,
-    paddingVertical: 10, // Adjusted: Reduced vertical padding above/below
+    paddingVertical: 10,
     paddingHorizontal: 13,
     shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 3 },
@@ -746,28 +740,28 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: spacing.md,
     justifyContent: "space-between",
-    marginBottom: 6, // Adjusted: Tightened space below header
+    marginBottom: 6,
   },
   workoutTitle: {
     color: colors.textPrimary,
     flex: 1,
     ...typography.workoutTitle,
-    fontSize: 16, // Adjusted: 10% smaller
-    lineHeight: 20, // Tighter line-height ensures exact center alignment
+    fontSize: 16,
+    lineHeight: 20,
   },
   duration: {
     color: colors.textSecondary,
     backgroundColor: colors.border,
     borderRadius: radius.pill,
-    fontSize: 11, // Adjusted: 10% smaller
+    fontSize: 11,
     fontWeight: "800",
     letterSpacing: 0,
-    lineHeight: 14, // Tighter line-height
+    lineHeight: 14,
     marginTop: 0,
-    minWidth: 50, // Reduced minimum width slightly
+    minWidth: 50,
     overflow: "hidden",
     paddingHorizontal: 8,
-    paddingVertical: 3, // Reduced padding
+    paddingVertical: 3,
     textAlign: "center",
   },
   draftBadge: {
@@ -776,15 +770,15 @@ const styles = StyleSheet.create({
     borderColor: "rgba(91, 212, 224, 0.35)",
     borderRadius: radius.pill,
     borderWidth: StyleSheet.hairlineWidth,
-    fontSize: 11, // Adjusted: 10% smaller
+    fontSize: 11,
     fontWeight: "800",
     letterSpacing: 0,
-    lineHeight: 14, // Tighter line-height
+    lineHeight: 14,
     marginTop: 0,
-    minWidth: 80, // Reduced minimum width
+    minWidth: 80,
     overflow: "hidden",
     paddingHorizontal: 8,
-    paddingVertical: 3, // Reduced padding
+    paddingVertical: 3,
     textAlign: "center",
   },
   exerciseList: {
@@ -793,7 +787,7 @@ const styles = StyleSheet.create({
   exerciseText: {
     color: colors.textSecondary,
     ...typography.exercise,
-    fontSize: 13, // Adjusted: 10% smaller
+    fontSize: 13,
   },
   floatingAddButton: {
     alignItems: "center",

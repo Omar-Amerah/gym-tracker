@@ -1,4 +1,5 @@
 type TargetType = "Latest" | "Routine";
+
 export type CategoryRecord = {
   id: string;
   name: string;
@@ -52,118 +53,383 @@ export const DEFAULT_CATEGORIES = [
 ] as const;
 
 export const DEFAULT_EXERCISES: ExerciseRecord[] = [
-  createSeedExercise("cable-woodchops", "Cable Woodchops", "Abs"),
-  createSeedExercise("crunches", "Crunches", "Abs"),
-  createSeedExercise("leg-raises", "Leg Raises", "Abs"),
-  createSeedExercise("medball-rotations", "Medball Rotations", "Abs"),
-  createSeedExercise("pallof-press", "Pallof Press", "Abs"),
-  createSeedExercise("plank", "Plank", "Abs"),
-  createSeedExercise("pull-up", "Pull Up", "Back"),
-  createSeedExercise("barbell-row", "Barbell Row", "Back"),
-  createSeedExercise("diverging-lat-pulldown", "Diverging Lat Pulldown", "Back"),
-  createSeedExercise("bicep-curl", "Bicep Curl", "Biceps"),
-  createSeedExercise("bench-press", "Bench Press", "Chest"),
-  createSeedExercise("pec-fly", "Pec Fly", "Chest"),
-  createSeedExercise("face-pulls", "Face Pulls", "Shoulders"),
-  createSeedExercise("military-press", "Military Press", "Shoulders"),
-  createSeedExercise("incline-dumbbell-press", "Incline Dumbbell Press", "Chest"),
-  createSeedExercise("squat", "Squat", "Legs"),
-  createSeedExercise("romanian-deadlifts", "Romanian Deadlifts", "Legs"),
-  createSeedExercise("romanian-deadlift", "Romanian Deadlift", "Legs"),
+  // Abs / Core
+  createSeedExercise(
+    "ab-crunch-machine",
+    "Ab Crunch Machine",
+    "Abs",
+    "Strength: Weight, Reps",
+  ),
+  createSeedExercise("cable-abs", "Cable Abs", "Abs", "Strength: Weight, Reps"),
+  createSeedExercise(
+    "cable-woodchops",
+    "Cable Woodchops",
+    "Abs",
+    "Strength: Weight, Reps",
+  ),
+  createSeedExercise("crunches", "Crunches", "Abs", "Bodyweight: Reps"),
+  createSeedExercise(
+    "decline-sit-ups",
+    "Decline Sit Ups",
+    "Abs",
+    "Bodyweight: Reps",
+  ),
+  createSeedExercise("leg-raises", "Leg Raises", "Abs", "Bodyweight: Reps"),
+  createSeedExercise(
+    "medball-rotations",
+    "Medball Rotations",
+    "Abs",
+    "Strength: Weight, Reps",
+  ),
+  createSeedExercise(
+    "pallof-press",
+    "Pallof Press",
+    "Abs",
+    "Strength: Weight, Reps",
+  ),
+  createSeedExercise("plank", "Plank", "Abs", "Bodyweight: Time"),
+  createSeedExercise(
+    "weighted-russian-twist",
+    "Weighted Russian Twist",
+    "Abs",
+    "Strength: Weight, Reps",
+  ),
+
+  // Back
+  createSeedExercise(
+    "assisted-pull-up",
+    "Assisted Pull Up",
+    "Back",
+    "Strength: Weight, Reps",
+  ),
+  createSeedExercise(
+    "barbell-row",
+    "Barbell Row",
+    "Back",
+    "Strength: Weight, Reps",
+  ),
+  createSeedExercise(
+    "cable-row",
+    "Cable Row",
+    "Back",
+    "Strength: Weight, Reps",
+  ),
+  createSeedExercise(
+    "diverging-lat-pulldown",
+    "Diverging Lat Pulldown",
+    "Back",
+    "Strength: Weight, Reps",
+  ),
+  createSeedExercise(
+    "lat-pulldown-machine",
+    "Lat Pulldown Machine",
+    "Back",
+    "Strength: Weight, Reps",
+  ),
+  createSeedExercise("pull-up", "Pull Up", "Back", "Bodyweight: Reps"),
+  createSeedExercise(
+    "seated-row",
+    "Seated Row",
+    "Back",
+    "Strength: Weight, Reps",
+  ),
+  createSeedExercise(
+    "seated-row-individual",
+    "Seated Row Individual",
+    "Back",
+    "Strength: Weight, Reps",
+  ),
+  createSeedExercise(
+    "single-arm-dumbbell-row",
+    "Single-Arm Dumbbell Row",
+    "Back",
+    "Strength: Weight, Reps",
+    "Yes",
+  ),
+  createSeedExercise(
+    "t-bar-row",
+    "T Bar Row",
+    "Back",
+    "Strength: Weight, Reps",
+  ),
+
+  // Biceps / Forearms
+  createSeedExercise(
+    "bicep-curl",
+    "Bicep Curl",
+    "Biceps",
+    "Strength: Weight, Reps",
+  ),
+  createSeedExercise(
+    "cable-bicep-curl",
+    "Cable Bicep Curl",
+    "Biceps",
+    "Strength: Weight, Reps",
+  ),
+  createSeedExercise(
+    "cable-reverse-bicep-curls",
+    "Cable Reverse Bicep Curls",
+    "Biceps",
+    "Strength: Weight, Reps",
+  ),
+  createSeedExercise(
+    "dumbbell-bicep-curl",
+    "Dumbbell Bicep Curl",
+    "Biceps",
+    "Strength: Weight, Reps",
+  ),
+  createSeedExercise(
+    "hammer-curl",
+    "Hammer Curl",
+    "Biceps",
+    "Strength: Weight, Reps",
+  ),
+  createSeedExercise(
+    "incline-dumbbell-curl",
+    "Incline Dumbbell Curl",
+    "Biceps",
+    "Strength: Weight, Reps",
+  ),
+  createSeedExercise(
+    "preacher-curl",
+    "Preacher Curl",
+    "Biceps",
+    "Strength: Weight, Reps",
+  ),
+  createSeedExercise(
+    "reverse-grip-ez-bar-curl",
+    "Reverse Grip EZ Bar Curl",
+    "Biceps",
+    "Strength: Weight, Reps",
+  ),
+  createSeedExercise(
+    "reverse-wrist-curls",
+    "Reverse Wrist Curls",
+    "Biceps",
+    "Strength: Weight, Reps",
+  ),
+  createSeedExercise(
+    "wrist-curls",
+    "Wrist Curls",
+    "Biceps",
+    "Strength: Weight, Reps",
+  ),
+
+  // Cardio / Conditioning
+  createSeedExercise("bike", "Bike", "Cardio", "Cardio: Time"),
+  createSeedExercise(
+    "rowing-machine",
+    "Rowing Machine",
+    "Cardio",
+    "Cardio: Distance, Time",
+  ),
+  createSeedExercise(
+    "treadmill-run",
+    "Treadmill Run",
+    "Cardio",
+    "Cardio: Distance, Time",
+  ),
+  createSeedExercise("walking", "Walking", "Cardio", "Cardio: Distance, Time"),
+
+  // Chest
+  createSeedExercise(
+    "bench-press",
+    "Bench Press",
+    "Chest",
+    "Strength: Weight, Reps",
+  ),
+  createSeedExercise(
+    "cable-chest-fly",
+    "Cable Chest Fly",
+    "Chest",
+    "Strength: Weight, Reps",
+  ),
+  createSeedExercise(
+    "chest-fly",
+    "Chest Fly",
+    "Chest",
+    "Strength: Weight, Reps",
+  ),
+  createSeedExercise(
+    "chest-press-machine",
+    "Chest Press Machine",
+    "Chest",
+    "Strength: Weight, Reps",
+  ),
+  createSeedExercise(
+    "decline-bench-press",
+    "Decline Bench Press",
+    "Chest",
+    "Strength: Weight, Reps",
+  ),
+  createSeedExercise("dips", "Dips", "Chest", "Bodyweight: Reps"),
+  createSeedExercise(
+    "incline-dumbbell-press",
+    "Incline Dumbbell Press",
+    "Chest",
+    "Strength: Weight, Reps",
+  ),
+  createSeedExercise("pec-fly", "Pec Fly", "Chest", "Strength: Weight, Reps"),
+  createSeedExercise("push-up", "Push Up", "Chest", "Bodyweight: Reps"),
   createSeedExercise(
     "single-arm-landmine-punch-press",
     "Single-Arm Landmine Punch Press",
     "Chest",
+    "Strength: Weight, Reps",
+    "Yes",
+  ),
+
+  // Legs
+  createSeedExercise(
+    "back-extension",
+    "Back Extension",
+    "Legs",
+    "Bodyweight: Reps",
+  ),
+  createSeedExercise(
+    "box-deadlift",
+    "Box Deadlift",
+    "Legs",
+    "Strength: Weight, Reps",
+  ),
+  createSeedExercise("box-jumps", "Box Jumps", "Legs", "Bodyweight: Reps"),
+  createSeedExercise(
+    "bulgarian-split-squats",
+    "Bulgarian Split Squats",
+    "Legs",
+    "Strength: Weight, Reps",
+    "Yes",
+  ),
+  createSeedExercise(
+    "calf-raises",
+    "Calf Raises",
+    "Legs",
+    "Strength: Weight, Reps",
+  ),
+  createSeedExercise("leg-curl", "Leg Curl", "Legs", "Strength: Weight, Reps"),
+  createSeedExercise(
+    "leg-extension",
+    "Leg Extension",
+    "Legs",
+    "Strength: Weight, Reps",
+  ),
+  createSeedExercise(
+    "leg-press",
+    "Leg Press",
+    "Legs",
+    "Strength: Weight, Reps",
+  ),
+  createSeedExercise(
+    "romanian-deadlift",
+    "Romanian Deadlift",
+    "Legs",
+    "Strength: Weight, Reps",
+  ),
+  createSeedExercise(
+    "romanian-deadlifts",
+    "Romanian Deadlifts",
+    "Legs",
+    "Strength: Weight, Reps",
+  ),
+  createSeedExercise("squat", "Squat", "Legs", "Strength: Weight, Reps"),
+  createSeedExercise(
+    "standing-band-knee-drives",
+    "Standing Band Knee Drives",
+    "Legs",
+    "Strength: Weight, Reps",
+    "Yes",
+  ),
+
+  // Shoulders
+  createSeedExercise(
+    "cable-delt-fly",
+    "Cable Delt Fly",
+    "Shoulders",
+    "Strength: Weight, Reps",
+  ),
+  createSeedExercise(
+    "cable-lateral-raise",
+    "Cable Lateral Raise",
+    "Shoulders",
+    "Strength: Weight, Reps",
+  ),
+  createSeedExercise(
+    "external-rotation",
+    "External Rotation",
+    "Shoulders",
+    "Strength: Weight, Reps",
+  ),
+  createSeedExercise(
+    "face-pulls",
+    "Face Pulls",
+    "Shoulders",
+    "Strength: Weight, Reps",
+  ),
+  createSeedExercise(
+    "front-raise",
+    "Front Raise",
+    "Shoulders",
+    "Strength: Weight, Reps",
+  ),
+  createSeedExercise(
+    "lateral-raise",
+    "Lateral Raise",
+    "Shoulders",
+    "Strength: Weight, Reps",
+  ),
+  createSeedExercise(
+    "military-press",
+    "Military Press",
+    "Shoulders",
+    "Strength: Weight, Reps",
+  ),
+  createSeedExercise(
+    "rear-delt-fly",
+    "Rear Delt Fly",
+    "Shoulders",
+    "Strength: Weight, Reps",
+  ),
+  createSeedExercise(
+    "shoulder-press",
+    "Shoulder Press",
+    "Shoulders",
+    "Strength: Weight, Reps",
+  ),
+
+  // Triceps
+  createSeedExercise(
+    "cable-tricep-extension",
+    "Cable Tricep Extension",
+    "Triceps",
+    "Strength: Weight, Reps",
+  ),
+  createSeedExercise(
+    "overhead-triceps-extension",
+    "Overhead Triceps Extension",
+    "Triceps",
+    "Strength: Weight, Reps",
+  ),
+  createSeedExercise(
+    "skull-crushers",
+    "Skull Crushers",
+    "Triceps",
+    "Strength: Weight, Reps",
+  ),
+  createSeedExercise(
+    "tricep-pushdown",
+    "Tricep Pushdown",
+    "Triceps",
+    "Strength: Weight, Reps",
   ),
 ];
 
-export const DEFAULT_ROUTINES = [
-  {
-    id: "upper-body",
-    name: "Upper body",
-    targetType: "Routine" as TargetType,
-    notes: "",
-    exercises: [
-      createSeedRoutineExercise("upper-body-bench-press", "upper-body", "bench-press", "Bench Press", 0, 2, 3),
-      createSeedRoutineExercise(
-        "upper-body-single-arm-landmine-punch-press",
-        "upper-body",
-        "single-arm-landmine-punch-press",
-        "Single-Arm Landmine Punch Press",
-        1,
-        1,
-        3,
-      ),
-      createSeedRoutineExercise("upper-body-barbell-row", "upper-body", "barbell-row", "Barbell Row", 2, 1, 3),
-      createSeedRoutineExercise("upper-body-military-press", "upper-body", "military-press", "Military Press", 3, 1, 3),
-      createSeedRoutineExercise(
-        "upper-body-incline-dumbbell-press",
-        "upper-body",
-        "incline-dumbbell-press",
-        "Incline Dumbbell Press",
-        4,
-        0,
-        3,
-      ),
-      createSeedRoutineExercise(
-        "upper-body-diverging-lat-pulldown",
-        "upper-body",
-        "diverging-lat-pulldown",
-        "Diverging Lat Pulldown",
-        5,
-        0,
-        3,
-      ),
-      createSeedRoutineExercise("upper-body-pec-fly", "upper-body", "pec-fly", "Pec Fly", 6, 0, 3),
-      createSeedRoutineExercise("upper-body-face-pulls", "upper-body", "face-pulls", "Face Pulls", 7, 0, 3),
-    ],
-  },
-  {
-    id: "lower-body",
-    name: "Lower Body",
-    targetType: "Routine" as TargetType,
-    notes: "",
-    exercises: [
-      createSeedRoutineExercise("lower-body-squat", "lower-body", "squat", "Squat", 0, 2, 3),
-      createSeedRoutineExercise(
-        "lower-body-romanian-deadlifts",
-        "lower-body",
-        "romanian-deadlifts",
-        "Romanian Deadlifts",
-        1,
-        1,
-        3,
-      ),
-    ],
-  },
-  {
-    id: "functional-fencing-day",
-    name: "Functional/Fencing Day",
-    targetType: "Routine" as TargetType,
-    notes: "",
-    exercises: [
-      createSeedRoutineExercise(
-        "functional-fencing-day-medball-rotations",
-        "functional-fencing-day",
-        "medball-rotations",
-        "Medball Rotations",
-        0,
-        0,
-        3,
-      ),
-      createSeedRoutineExercise("functional-fencing-day-plank", "functional-fencing-day", "plank", "Plank", 1, 0, 3),
-      createSeedRoutineExercise(
-        "functional-fencing-day-pallof-press",
-        "functional-fencing-day",
-        "pallof-press",
-        "Pallof Press",
-        2,
-        0,
-        3,
-      ),
-    ],
-  },
-];
+export const DEFAULT_ROUTINES: {
+  id: string;
+  name: string;
+  targetType: TargetType;
+  notes: string;
+  exercises: RoutineExerciseRecord[];
+}[] = [];
 
 export function createId(prefix: string) {
   const random = Math.random().toString(36).slice(2, 10);
@@ -171,21 +437,31 @@ export function createId(prefix: string) {
 }
 
 export function slugify(value: string) {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
 }
 
 export function nowIso() {
   return new Date().toISOString();
 }
 
-function createSeedExercise(id: string, name: string, category: string): ExerciseRecord {
+function createSeedExercise(
+  id: string,
+  name: string,
+  category: string,
+  exerciseType: string = "Strength: Weight, Reps",
+  singleArm: string = "Default (Yes)",
+): ExerciseRecord {
   const createdAt = "2026-05-18T00:00:00.000Z";
+
   return {
     id,
     name,
     category,
-    exerciseType: "Strength: Weight, Reps",
-    singleArm: "Default (Yes)",
+    exerciseType,
+    singleArm,
     bodyweightMultiplier: 100,
     createdAt,
     updatedAt: createdAt,
@@ -202,6 +478,7 @@ function createSeedRoutineExercise(
   workingSets: number,
 ): RoutineExerciseRecord {
   const createdAt = "2026-05-18T00:00:00.000Z";
+
   return {
     id,
     routineId,
