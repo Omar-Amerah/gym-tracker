@@ -11,6 +11,7 @@ import type {
   ActiveWorkoutSet,
   SetField,
 } from "../types";
+import { isSetFieldMissing } from "../workoutCompletion";
 import { getPreviousPlaceholder, getSetFieldPlan } from "../workoutFieldRules";
 import { getSetLabel } from "../workoutUtils";
 import { SetInput } from "./SetInput";
@@ -36,6 +37,7 @@ type SetRowProps = {
   ) => void;
   previousSet: PreviousSet;
   set: ActiveWorkoutSet;
+  validationAttempted: boolean;
 };
 
 export const SetRow = memo(function SetRow({
@@ -48,6 +50,7 @@ export const SetRow = memo(function SetRow({
   onUpdateSetTimeField,
   previousSet,
   set,
+  validationAttempted,
 }: SetRowProps) {
   const setFieldPlan = getSetFieldPlan(exercise.exerciseType);
   const prevNotes = previousSet?.notes?.trim()
@@ -96,6 +99,11 @@ export const SetRow = memo(function SetRow({
           <SetInput
             key={fieldPlan.field}
             fieldId={`${set.id}-${fieldPlan.field}`}
+            hasWarning={
+              validationAttempted &&
+              set.type !== "warmup" &&
+              isSetFieldMissing(set, exercise.exerciseType, fieldPlan.field)
+            }
             placeholder={getPreviousPlaceholder(fieldPlan.field, previousSet)}
             keyboardType={fieldPlan.keyboardType}
             onFocusScroll={onFocusScroll}

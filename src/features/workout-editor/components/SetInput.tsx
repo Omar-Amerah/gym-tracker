@@ -7,6 +7,7 @@ import { styles } from "../styles";
 
 type SetInputProps = {
   fieldId: string;
+  hasWarning?: boolean;
   keyboardType?: "default" | "decimal-pad" | "number-pad";
   multiline?: boolean;
   onChangeText: (value: string) => void;
@@ -20,6 +21,7 @@ type SetInputProps = {
 
 export const SetInput = memo(function SetInput({
   fieldId,
+  hasWarning,
   placeholder,
   keyboardType,
   multiline,
@@ -65,6 +67,7 @@ export const SetInput = memo(function SetInput({
         style={[
           styles.setInput,
           width ? { width } : null,
+          hasWarning && styles.inputWarning,
           isFocused && styles.inputFocused,
           style,
         ]}

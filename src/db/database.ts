@@ -203,7 +203,15 @@ async function migrateSchema(db: SQLite.SQLiteDatabase) {
   `);
 }
 
-async function seedIfEmpty(db: SQLite.SQLiteDatabase) {
+export async function seedDefaultData({ force = false } = {}) {
+  const db = await getDatabase();
+  await seedIfEmpty(db, { force });
+}
+
+async function seedIfEmpty(
+  db: SQLite.SQLiteDatabase,
+  { force = false } = {},
+) {
   const counts = await db.getFirstAsync<{
     categoryCount: number;
     exerciseCount: number;
@@ -216,6 +224,7 @@ async function seedIfEmpty(db: SQLite.SQLiteDatabase) {
   `);
 
   if (
+    !force &&
     counts &&
     (counts.categoryCount > 0 || counts.exerciseCount > 0 || counts.routineCount > 0)
   ) {

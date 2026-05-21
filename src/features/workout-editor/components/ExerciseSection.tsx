@@ -7,6 +7,7 @@ import { colors } from "@/theme/colors";
 
 import { styles } from "../styles";
 import type { ActiveWorkoutExercise, SetField } from "../types";
+import { isExerciseComplete } from "../workoutCompletion";
 import { getPreviousSetForCurrent } from "../workoutUtils";
 import { ExerciseFooterActions } from "./ExerciseFooterActions";
 import { SetRow } from "./SetRow";
@@ -18,11 +19,11 @@ type ExerciseSectionProps = {
   onAddSet: (exerciseId: string) => void;
   onExerciseNoteHeight: (exerciseId: string, height: number) => void;
   onFocusScroll?: (fieldId: string, inputRef: TextInput | null) => void;
+  onHistory: (exercise: ActiveWorkoutExercise) => void;
   onOpenExerciseOptions: (exerciseId: string) => void;
   onOpenSetOptions: (exerciseId: string, setId: string) => void;
   onSetNoteHeight: (setId: string, height: number) => void;
   onShowFutureAction: (message: string) => void;
-  onToggleExerciseStar: (exerciseId: string) => void;
   onUpdateExerciseNote: (exerciseId: string, value: string) => void;
   onUpdateSetField: (
     exerciseId: string,
@@ -37,6 +38,7 @@ type ExerciseSectionProps = {
   ) => void;
   previousPerformance: PreviousExercisePerformance | undefined;
   setExerciseNoteRef: (exerciseId: string, ref: TextInput | null) => void;
+  validationAttempted: boolean;
 };
 
 export const ExerciseSection = memo(function ExerciseSection({
@@ -46,25 +48,36 @@ export const ExerciseSection = memo(function ExerciseSection({
   onAddSet,
   onExerciseNoteHeight,
   onFocusScroll,
+  onHistory,
   onOpenExerciseOptions,
   onOpenSetOptions,
   onSetNoteHeight,
   onShowFutureAction,
-  onToggleExerciseStar,
   onUpdateExerciseNote,
   onUpdateSetField,
   onUpdateSetTimeField,
   previousPerformance,
   setExerciseNoteRef,
+  validationAttempted,
 }: ExerciseSectionProps) {
   const exerciseNoteRef = useRef<TextInput | null>(null);
   const [isNoteFocused, setIsNoteFocused] = useState(false);
   const previousExerciseNote = previousPerformance?.notes?.trim() || undefined;
+  const exerciseComplete = isExerciseComplete(exercise);
 
   return (
     <View style={styles.exerciseSection}>
       <View style={styles.exerciseHeader}>
         <Text style={styles.exerciseTitle}>{exercise.name}</Text>
+        {exerciseComplete ? (
+          <MaterialCommunityIcons
+            accessibilityLabel={`${exercise.name} complete`}
+            color={colors.accent}
+            name="check"
+            size={18}
+            style={styles.exerciseCompleteIcon}
+          />
+        ) : null}
         <Pressable
           accessibilityLabel={`${exercise.name} options`}
           accessibilityRole="button"
@@ -133,24 +146,19 @@ export const ExerciseSection = memo(function ExerciseSection({
             previousPerformance,
           )}
           set={set}
+          validationAttempted={validationAttempted}
         />
       ))}
 
       <ExerciseFooterActions
         exerciseName={exercise.name}
-        isStarred={exercise.isStarred}
         onAddSet={() => onAddSet(exercise.id)}
         onCharts={() =>
           onShowFutureAction(
             "Charts will be available after workouts are saved.",
           )
         }
-        onHistory={() =>
-          onShowFutureAction(
-            "History will be available after workouts are saved.",
-          )
-        }
-        onToggleStar={() => onToggleExerciseStar(exercise.id)}
+        onHistory={() => onHistory(exercise)}
       />
     </View>
   );

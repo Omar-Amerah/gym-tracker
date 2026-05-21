@@ -42,7 +42,7 @@ export const styles = StyleSheet.create({
   dateHeaderTitle: {
     alignItems: "center",
     flex: 1,
-    height: 42,
+    height: 44,
     justifyContent: "center",
     paddingHorizontal: 10,
   },
@@ -63,12 +63,20 @@ export const styles = StyleSheet.create({
     fontWeight: "600",
     letterSpacing: 0,
   },
-  autosaveStatusText: {
-    color: colors.textMuted,
-    fontSize: 11,
-    fontWeight: "600",
+  autosaveStatusPill: {
+    backgroundColor: "rgba(91, 212, 224, 0.08)",
+    borderColor: colors.accentMuted,
+    borderRadius: radius.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "700",
     letterSpacing: 0,
-    marginTop: 1,
+    lineHeight: 15,
+    marginTop: 3,
+    overflow: "hidden",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
   },
   headerActions: {
     alignItems: "center",
@@ -117,6 +125,10 @@ export const styles = StyleSheet.create({
   inputFocused: {
     borderColor: colors.accent,
     borderWidth: 1.5,
+  },
+  inputWarning: {
+    backgroundColor: "rgba(255, 90, 90, 0.04)",
+    borderColor: "rgba(255, 120, 120, 0.65)",
   },
   pressableWorkoutInput: {
     alignItems: "center",
@@ -168,6 +180,9 @@ export const styles = StyleSheet.create({
     fontWeight: "700",
     letterSpacing: 0,
     paddingRight: 12,
+  },
+  exerciseCompleteIcon: {
+    marginRight: 3,
   },
   exerciseMenu: {
     alignItems: "center",

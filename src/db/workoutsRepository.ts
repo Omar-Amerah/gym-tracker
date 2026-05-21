@@ -89,6 +89,32 @@ export type PreviousExercisePerformance = {
   workoutName: string;
 };
 
+export type ExerciseHistorySet = {
+  distance: number | null;
+  id: string;
+  kg: number | null;
+  minutes: number | null;
+  notes: string | null;
+  reps: number | null;
+  seconds: number | null;
+  setOrder: number;
+  setType: "warmup" | "normal" | "drop";
+};
+
+export type ExerciseHistoryEntry = {
+  bodyweightKg: number | null;
+  exerciseId: string | null;
+  exerciseName: string;
+  exerciseNotes: string | null;
+  exerciseType: string | null;
+  sets: ExerciseHistorySet[];
+  startTime: string | null;
+  workoutDate: string;
+  workoutExerciseId: string;
+  workoutId: string;
+  workoutName: string;
+};
+
 type WorkoutRow = {
   bodyweightKg?: number | null;
   createdAt?: string;
@@ -145,6 +171,23 @@ type PreviousExerciseRow = {
   workoutExerciseId: string;
   workoutId: string;
   workoutName: string;
+};
+
+type ExerciseHistoryRow = {
+  bodyweightKg: number | null;
+  exerciseId: string | null;
+  exerciseName: string;
+  exerciseNotes: string | null;
+  exerciseType: string | null;
+  startTime: string | null;
+  workoutDate: string;
+  workoutExerciseId: string;
+  workoutId: string;
+  workoutName: string;
+};
+
+type ExerciseHistorySetRow = ExerciseHistorySet & {
+  workoutExerciseId: string;
 };
 
 export async function saveWorkout(input: WorkoutInput) {
@@ -599,6 +642,135 @@ export async function getLastExercisePerformance({
     notes: exercise.notes,
     sets,
   };
+}
+
+export async function getExerciseHistory({
+  exerciseId,
+  exerciseName,
+  limit = 30,
+}: {
+  exerciseId?: string | null;
+  exerciseName: string;
+  limit?: number;
+}): Promise<ExerciseHistoryEntry[]> {
+  const db = await getDatabase();
+  const trimmedExerciseId = exerciseId?.trim() || null;
+  const trimmedName = exerciseName.trim();
+  if (!trimmedExerciseId && !trimmedName) return [];
+
+  const resultLimit = Math.max(1, Math.min(Math.floor(limit), 100));
+  const orderBy = `CASE
+       WHEN instr(w.date, '/') > 0 THEN substr(w.date, 7, 4) || '-' || substr(w.date, 4, 2) || '-' || substr(w.date, 1, 2)
+       ELSE w.date
+     END DESC,
+     w.startTime DESC,
+     w.updatedAt DESC,
+     w.createdAt DESC,
+     we.sortOrder ASC`;
+
+  let rows = trimmedExerciseId
+    ? await db.getAllAsync<ExerciseHistoryRow>(
+        `SELECT
+           w.id AS workoutId,
+           w.name AS workoutName,
+           w.date AS workoutDate,
+           w.startTime AS startTime,
+           w.bodyweightKg AS bodyweightKg,
+           we.id AS workoutExerciseId,
+           we.exerciseId AS exerciseId,
+           we.name AS exerciseName,
+           COALESCE(we.exerciseType, e.exerciseType) AS exerciseType,
+           we.notes AS exerciseNotes
+         FROM workout_exercises we
+         INNER JOIN workouts w ON w.id = we.workoutId
+         LEFT JOIN exercises e ON e.id = we.exerciseId
+         WHERE we.exerciseId = ?
+           AND w.status = 'completed'
+         ORDER BY ${orderBy}
+         LIMIT ?`,
+        trimmedExerciseId,
+        resultLimit,
+      )
+    : [];
+
+  if (rows.length === 0 && trimmedName) {
+    rows = await db.getAllAsync<ExerciseHistoryRow>(
+      `SELECT
+         w.id AS workoutId,
+         w.name AS workoutName,
+         w.date AS workoutDate,
+         w.startTime AS startTime,
+         w.bodyweightKg AS bodyweightKg,
+         we.id AS workoutExerciseId,
+         we.exerciseId AS exerciseId,
+         we.name AS exerciseName,
+         COALESCE(we.exerciseType, e.exerciseType) AS exerciseType,
+         we.notes AS exerciseNotes
+       FROM workout_exercises we
+       INNER JOIN workouts w ON w.id = we.workoutId
+       LEFT JOIN exercises e ON e.id = we.exerciseId
+       WHERE LOWER(TRIM(we.name)) = LOWER(TRIM(?))
+         AND w.status = 'completed'
+       ORDER BY ${orderBy}
+       LIMIT ?`,
+      trimmedName,
+      resultLimit,
+    );
+  }
+
+  if (rows.length === 0) return [];
+
+  const workoutExerciseIds = rows.map((row) => row.workoutExerciseId);
+  const placeholders = workoutExerciseIds.map(() => "?").join(", ");
+  const sets = await db.getAllAsync<ExerciseHistorySetRow>(
+    `SELECT
+       id,
+       workoutExerciseId,
+       setType,
+       setOrder,
+       distance,
+       kg,
+       reps,
+       minutes,
+       seconds,
+       notes
+     FROM workout_sets
+     WHERE workoutExerciseId IN (${placeholders})
+     ORDER BY workoutExerciseId ASC, setOrder ASC`,
+    ...workoutExerciseIds,
+  );
+
+  const setsByExercise = new Map<string, ExerciseHistorySet[]>();
+  for (const set of sets) {
+    const nextSet: ExerciseHistorySet = {
+      id: set.id,
+      setType: set.setType,
+      setOrder: set.setOrder,
+      distance: set.distance,
+      kg: set.kg,
+      reps: set.reps,
+      minutes: set.minutes,
+      seconds: set.seconds,
+      notes: set.notes,
+    };
+    const currentSets = setsByExercise.get(set.workoutExerciseId) ?? [];
+    currentSets.push(nextSet);
+    setsByExercise.set(set.workoutExerciseId, currentSets);
+  }
+
+  return rows.map((row) => ({
+    workoutId: row.workoutId,
+    workoutName: row.workoutName.trim() || "Untitled Workout",
+    workoutDate: row.workoutDate,
+    startTime: row.startTime ?? null,
+    bodyweightKg: row.bodyweightKg ?? null,
+    workoutExerciseId: row.workoutExerciseId,
+    exerciseId: row.exerciseId ?? null,
+    exerciseName: row.exerciseName,
+    exerciseType: row.exerciseType ?? null,
+    exerciseNotes: row.exerciseNotes ?? null,
+    sets: setsByExercise.get(row.workoutExerciseId) ?? [],
+  }));
 }
 
 function formatLogDate(value: string) {

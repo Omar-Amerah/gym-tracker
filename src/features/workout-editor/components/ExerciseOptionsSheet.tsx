@@ -64,7 +64,6 @@ export function ExerciseOptionsSheet({
       <SheetListAction
         icon="history"
         label="History"
-        locked
         onPress={onHistory}
       />
       <SheetListAction

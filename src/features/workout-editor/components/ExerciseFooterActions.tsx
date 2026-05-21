@@ -8,20 +8,16 @@ import { styles } from "../styles";
 
 type ExerciseFooterActionsProps = {
   exerciseName: string;
-  isStarred: boolean;
   onAddSet: () => void;
   onCharts: () => void;
   onHistory: () => void;
-  onToggleStar: () => void;
 };
 
 export const ExerciseFooterActions = memo(function ExerciseFooterActions({
   exerciseName,
-  isStarred,
   onAddSet,
   onCharts,
   onHistory,
-  onToggleStar,
 }: ExerciseFooterActionsProps) {
   return (
     <View style={styles.exerciseFooter}>
@@ -62,21 +58,6 @@ export const ExerciseFooterActions = memo(function ExerciseFooterActions({
           <MaterialCommunityIcons
             color={colors.accent}
             name="chart-line"
-            size={22}
-          />
-        </Pressable>
-        <Pressable
-          accessibilityLabel={`${exerciseName} star`}
-          accessibilityRole="button"
-          onPress={onToggleStar}
-          style={({ pressed }) => [
-            styles.exerciseIconButton,
-            pressed && styles.pressed,
-          ]}
-        >
-          <MaterialCommunityIcons
-            color={isStarred ? colors.accent : colors.textMuted}
-            name={isStarred ? "star" : "star-outline"}
             size={22}
           />
         </Pressable>

@@ -27,6 +27,35 @@ export function isSetComplete(
   );
 }
 
+export function isSetFieldMissing(
+  set: ActiveWorkoutSet,
+  exerciseType: string | null | undefined,
+  field: SetMetricField,
+) {
+  if (!getRequiredFieldsForExerciseType(exerciseType).includes(field)) {
+    return false;
+  }
+
+  return !hasSetFieldValue(set, field);
+}
+
+export function isExerciseComplete(exercise: ActiveWorkoutExercise) {
+  if (exercise.sets.length === 0) return false;
+
+  const exerciseHasStarted = exercise.sets.some(
+    (set) => !isSetCompletelyBlank(set, exercise),
+  );
+  if (!exerciseHasStarted) return false;
+
+  return exercise.sets.every((set) => {
+    if (set.type === "warmup") {
+      return !isSetCompletelyBlank(set, exercise);
+    }
+
+    return isSetComplete(set, exercise.exerciseType);
+  });
+}
+
 export function getWorkoutCompletionIssues(
   workout: ActiveWorkout | null,
 ): WorkoutCompletionIssue[] {

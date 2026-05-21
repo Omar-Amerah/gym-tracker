@@ -47,7 +47,7 @@ export const WorkoutHeader = memo(function WorkoutHeader({
           {title}
         </Text>
         {autosaveStatus !== "idle" ? (
-          <Text style={styles.autosaveStatusText}>
+          <Text style={styles.autosaveStatusPill}>
             {autosaveStatus === "saving"
               ? "Saving..."
               : autosaveStatus === "failed"

@@ -1,7 +1,9 @@
+import { useNavigation } from "@react-navigation/native";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -26,6 +28,7 @@ import {
 } from "@/state/activeWorkoutSelection";
 import { backOrReplace } from "@/utils/navigation";
 import { ExerciseOptionsSheet } from "./components/ExerciseOptionsSheet";
+import { FinishWorkoutSummarySheet } from "./components/FinishWorkoutSummarySheet";
 import { ExerciseSection } from "./components/ExerciseSection";
 import { ReorderExercisesView } from "./components/ReorderExercisesView";
 import { SetOptionsSheet } from "./components/SetOptionsSheet";
@@ -35,8 +38,13 @@ import { WorkoutHeader } from "./components/WorkoutHeader";
 import { WorkoutOptionsSheet } from "./components/WorkoutOptionsSheet";
 import { WorkoutTimePickerSheet } from "./components/WorkoutTimePickerSheet";
 import { styles } from "./styles";
+import {
+  buildFinishedWorkoutSummary,
+  type FinishedWorkoutSummary,
+} from "./finishedWorkoutSummary";
 import type {
   ActiveWorkout,
+  ActiveWorkoutExercise,
   ActiveWorkoutSet,
   SelectedSet,
   SetField,
@@ -61,6 +69,7 @@ import {
 
 export function WorkoutEditorScreen() {
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation();
   const router = useRouter();
 
   const [workout, setWorkout] = useState<ActiveWorkout | null>(null);
@@ -83,7 +92,11 @@ export function WorkoutEditorScreen() {
     string | null
   >(null);
   const [isReorderingExercises, setIsReorderingExercises] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [noteHeights, setNoteHeights] = useState<Record<string, number>>({});
+  const [validationAttempted, setValidationAttempted] = useState(false);
+  const [finishSummary, setFinishSummary] =
+    useState<FinishedWorkoutSummary | null>(null);
   const exerciseNoteRefs = useRef<Record<string, TextInput | null>>({});
   const scrollViewRef = useRef<ScrollView | null>(null);
   const scrollYRef = useRef(0);
@@ -92,6 +105,7 @@ export function WorkoutEditorScreen() {
   );
   const isDeletingWorkoutRef = useRef(false);
   const isFinishingWorkoutRef = useRef(false);
+  const isLeavingWorkoutRef = useRef(false);
   const { previousPerformance } = usePreviousPerformance(workout);
   const {
     autosaveStatus,
@@ -110,6 +124,27 @@ export function WorkoutEditorScreen() {
     setAutosaveStatus,
     setWorkout,
   });
+
+  useEffect(() => {
+    setValidationAttempted(false);
+  }, [editorKey]);
+
+  useEffect(() => {
+    const showSubscription = Keyboard.addListener("keyboardDidShow", (event) => {
+      setKeyboardHeight(event.endCoordinates.height);
+    });
+    const hideSubscription = Keyboard.addListener("keyboardDidHide", () => {
+      setKeyboardHeight(0);
+    });
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+      if (scrollFocusTimeoutRef.current) {
+        clearTimeout(scrollFocusTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     return registerActiveWorkoutReplacementHandler(
@@ -239,21 +274,6 @@ export function WorkoutEditorScreen() {
     [],
   );
 
-  const toggleExerciseStar = useCallback((exerciseId: string) => {
-    setWorkout((current) => {
-      if (!current) return current;
-
-      return {
-        ...current,
-        exercises: current.exercises.map((exercise) =>
-          exercise.id === exerciseId
-            ? { ...exercise, isStarred: !exercise.isStarred }
-            : exercise,
-        ),
-      };
-    });
-  }, []);
-
   const addSetToExercise = useCallback((exerciseId: string) => {
     setWorkout((current) => {
       if (!current) return current;
@@ -379,9 +399,14 @@ export function WorkoutEditorScreen() {
         ...payload,
         status: "completed",
       } as const;
+      const summary = navigateAfterSave
+        ? await buildFinishedWorkoutSummary(candidate)
+        : null;
       await markWorkoutCompleted(candidate.id, completedPayload);
       markPayloadAsSaved(completedPayload);
-      if (navigateAfterSave) router.replace("/");
+      if (navigateAfterSave) {
+        setFinishSummary(summary);
+      }
     } catch (error) {
       console.error("Failed to save workout", error);
       Alert.alert(
@@ -398,6 +423,7 @@ export function WorkoutEditorScreen() {
     if (!workout || isSavingWorkout) return;
 
     if (isWorkoutIncomplete(workout)) {
+      setValidationAttempted(true);
       Alert.alert(
         "Finish incomplete workout?",
         "Some sets are missing required values. Finish anyway?",
@@ -425,6 +451,70 @@ export function WorkoutEditorScreen() {
     setWorkout(completedWorkout);
     void saveFinishedWorkout(completedWorkout);
   };
+
+  const requestLeaveWorkout = useCallback(() => {
+    if (!workout || workout.status !== "draft" || !isWorkoutIncomplete(workout)) {
+      backOrReplace("/routines");
+      return;
+    }
+
+    setValidationAttempted(true);
+    Alert.alert(
+      "Leave unfinished workout?",
+      "Some sets are incomplete. Your workout is autosaved, but it is not finished.",
+      [
+        { text: "Stay", style: "cancel" },
+        {
+          text: "Leave Anyway",
+          onPress: () => {
+            isLeavingWorkoutRef.current = true;
+            backOrReplace("/routines");
+          },
+        },
+      ],
+    );
+  }, [workout]);
+
+  useEffect(() => {
+    return navigation.addListener("beforeRemove", (event) => {
+      if (
+        isDeletingWorkoutRef.current ||
+        isFinishingWorkoutRef.current ||
+        isLeavingWorkoutRef.current ||
+        !workout ||
+        workout.status !== "draft" ||
+        !isWorkoutIncomplete(workout)
+      ) {
+        return;
+      }
+
+      const actionType = event.data.action.type;
+      if (
+        actionType !== "GO_BACK" &&
+        actionType !== "POP" &&
+        actionType !== "POP_TO_TOP"
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      setValidationAttempted(true);
+      Alert.alert(
+        "Leave unfinished workout?",
+        "Some sets are incomplete. Your workout is autosaved, but it is not finished.",
+        [
+          { text: "Stay", style: "cancel" },
+          {
+            text: "Leave Anyway",
+            onPress: () => {
+              isLeavingWorkoutRef.current = true;
+              navigation.dispatch(event.data.action);
+            },
+          },
+        ],
+      );
+    });
+  }, [navigation, workout]);
 
   const openDatePicker = useCallback(() => {
     if (!workout) return;
@@ -601,6 +691,23 @@ export function WorkoutEditorScreen() {
   const showFutureActionAlert = useCallback((message: string) => {
     Alert.alert("Coming soon", message);
   }, []);
+
+  const openExerciseHistory = useCallback(
+    (exercise: ActiveWorkoutExercise | null) => {
+      if (!exercise) return;
+
+      setSelectedExerciseId(null);
+      router.push({
+        pathname: "/exercise-history",
+        params: {
+          exerciseId: exercise.exerciseId ?? "",
+          exerciseName: exercise.name,
+        },
+      });
+    },
+    [router],
+  );
+
   const getSetNoteHeight = useCallback((contentHeight: number) => {
     const DEFAULT_HEIGHT = 38;
     const MAX_HEIGHT = 120;
@@ -645,7 +752,7 @@ export function WorkoutEditorScreen() {
             });
           });
         },
-        Platform.OS === "android" ? 60 : 30,
+        Platform.OS === "android" ? 70 : 40,
       );
     },
     [insets.top],
@@ -725,7 +832,7 @@ export function WorkoutEditorScreen() {
         <WorkoutHeader
           autosaveStatus={autosaveStatus}
           isSavingWorkout={isSavingWorkout}
-          onBack={() => backOrReplace("/routines")}
+          onBack={requestLeaveWorkout}
           onFinish={finishWorkout}
           onOpenWorkoutMenu={() => setWorkoutMenuOpen(true)}
           title={headerTitle}
@@ -736,7 +843,12 @@ export function WorkoutEditorScreen() {
           ref={scrollViewRef}
           contentContainerStyle={[
             styles.content,
-            { paddingBottom: 120 + insets.bottom },
+            {
+              paddingBottom:
+                keyboardHeight > 0
+                  ? keyboardHeight + insets.bottom + 180
+                  : 140 + insets.bottom,
+            },
           ]}
           keyboardDismissMode="on-drag"
           keyboardShouldPersistTaps="handled"
@@ -774,16 +886,17 @@ export function WorkoutEditorScreen() {
                 noteHeights={noteHeights}
                 onAddSet={addSetToExercise}
                 onExerciseNoteHeight={updateExerciseNoteHeight}
+                onHistory={openExerciseHistory}
                 onOpenExerciseOptions={setSelectedExerciseId}
                 onOpenSetOptions={openSetOptions}
                 onSetNoteHeight={updateSetNoteHeight}
                 onShowFutureAction={showFutureActionAlert}
-                onToggleExerciseStar={toggleExerciseStar}
                 onUpdateExerciseNote={updateExerciseNote}
                 onUpdateSetField={updateSetField}
                 onUpdateSetTimeField={updateSetTimeField}
                 previousPerformance={previousPerformance[exercise.id]}
                 setExerciseNoteRef={setExerciseNoteRef}
+                validationAttempted={validationAttempted}
               />
             ))}
           </View>
@@ -861,9 +974,7 @@ export function WorkoutEditorScreen() {
             deleteExerciseFromWorkout(selectedExercise.id);
           }}
           onHistory={() =>
-            showFutureActionAlert(
-              "History will be available after workouts are saved.",
-            )
+            openExerciseHistory(selectedExercise)
           }
           onPersonalRecords={() =>
             showFutureActionAlert(
@@ -877,6 +988,15 @@ export function WorkoutEditorScreen() {
           }
           selectedExercise={selectedExercise}
           visible={selectedExerciseId !== null}
+        />
+
+        <FinishWorkoutSummarySheet
+          onDone={() => {
+            setFinishSummary(null);
+            router.replace("/");
+          }}
+          summary={finishSummary}
+          visible={finishSummary !== null}
         />
       </KeyboardAvoidingView>
     </SafeAreaView>

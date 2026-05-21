@@ -1,5 +1,3 @@
-import { PlaceholderScreen } from '@/components/placeholder-screen';
+import { StatisticsScreen } from "@/features/statistics/StatisticsScreen";
 
-export default function StatisticsScreen() {
-  return <PlaceholderScreen title="Statistics" subtitle="Training trends and progress charts will appear here." />;
-}
+export default StatisticsScreen;
