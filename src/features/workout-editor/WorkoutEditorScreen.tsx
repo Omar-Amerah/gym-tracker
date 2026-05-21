@@ -694,6 +694,23 @@ export function WorkoutEditorScreen() {
     [router],
   );
 
+  const openExerciseStatistics = useCallback(
+    (exercise: ActiveWorkoutExercise | null) => {
+      if (!exercise) return;
+
+      setSelectedExerciseId(null);
+      router.push({
+        pathname: "/statistics",
+        params: {
+          exerciseId: exercise.exerciseId ?? "",
+          exerciseName: exercise.name,
+          scrollTo: "exercise",
+        },
+      });
+    },
+    [router],
+  );
+
   const getSetNoteHeight = useCallback((contentHeight: number) => {
     const DEFAULT_HEIGHT = 38;
     const MAX_HEIGHT = 88;
@@ -995,6 +1012,7 @@ export function WorkoutEditorScreen() {
           onHistory={() => openExerciseHistory(selectedExercise)}
           onReorder={openExerciseReorder}
           onReplace={openExerciseReplacement}
+          onStatistics={() => openExerciseStatistics(selectedExercise)}
           selectedExercise={selectedExercise}
           visible={selectedExerciseId !== null}
         />

@@ -198,6 +198,20 @@ export default function RoutineDetailScreen() {
     });
   }
 
+  function openSelectedExerciseStatistics() {
+    if (!selectedExercise) return;
+
+    setSelectedExerciseId(null);
+    router.push({
+      pathname: "/statistics",
+      params: {
+        exerciseId: selectedExercise.exerciseId ?? "",
+        exerciseName: selectedExercise.name,
+        scrollTo: "exercise",
+      },
+    });
+  }
+
   return (
     <SafeAreaView edges={["top", "bottom"]} style={styles.safeArea}>
       <View style={styles.screen}>
@@ -448,6 +462,20 @@ export default function RoutineDetailScreen() {
                   style={styles.sheetIcon}
                 />
                 <Text style={styles.sheetText}>Edit Exercise</Text>
+              </Pressable>
+
+              <Pressable
+                accessibilityRole="button"
+                onPress={openSelectedExerciseStatistics}
+                style={styles.sheetAction}
+              >
+                <MaterialCommunityIcons
+                  color={colors.textPrimary}
+                  name="chart-bar"
+                  size={24}
+                  style={styles.sheetIcon}
+                />
+                <Text style={styles.sheetText}>Statistics</Text>
               </Pressable>
 
               <Pressable

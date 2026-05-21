@@ -13,6 +13,7 @@ type ExerciseOptionsSheetProps = {
   onHistory: () => void;
   onReorder: () => void;
   onReplace: () => void;
+  onStatistics: () => void;
   selectedExercise: ActiveWorkoutExercise | null;
   visible: boolean;
 };
@@ -24,6 +25,7 @@ export function ExerciseOptionsSheet({
   onHistory,
   onReorder,
   onReplace,
+  onStatistics,
   selectedExercise,
   visible,
 }: ExerciseOptionsSheetProps) {
@@ -59,6 +61,11 @@ export function ExerciseOptionsSheet({
         icon="history"
         label="History"
         onPress={onHistory}
+      />
+      <SheetListAction
+        icon="chart-bar"
+        label="Statistics"
+        onPress={onStatistics}
       />
     </BottomSheet>
   );

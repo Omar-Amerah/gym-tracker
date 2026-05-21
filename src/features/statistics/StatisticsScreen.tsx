@@ -1,10 +1,12 @@
 import { useFocusEffect } from "@react-navigation/native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useLocalSearchParams } from "expo-router";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
+  type LayoutChangeEvent,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -65,6 +67,20 @@ import {
 
 export function StatisticsScreen() {
   const selectedKeyRef = useRef<string | null>(null);
+  const scrollViewRef = useRef<ScrollView | null>(null);
+  const exerciseProgressYRef = useRef(0);
+  const pendingExerciseProgressScrollRef = useRef(false);
+  const params = useLocalSearchParams<{
+    exerciseId?: string | string[];
+    exerciseName?: string | string[];
+    scrollTo?: string | string[];
+  }>();
+  const requestedExerciseId = readParam(params.exerciseId).trim();
+  const requestedExerciseName = readParam(params.exerciseName).trim();
+  const shouldScrollToExerciseProgress =
+    readParam(params.scrollTo) === "exercise" ||
+    requestedExerciseId.length > 0 ||
+    requestedExerciseName.length > 0;
 
   const [overview, setOverview] = useState<StatsOverview | null>(null);
   const [topExercises, setTopExercises] = useState<TopExerciseStat[]>([]);
@@ -93,6 +109,36 @@ export function StatisticsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [dataMenuOpen, setDataMenuOpen] = useState(false);
 
+  const scrollToExerciseProgress = useCallback(() => {
+    requestAnimationFrame(() => {
+      scrollViewRef.current?.scrollTo({
+        animated: true,
+        y: Math.max(0, exerciseProgressYRef.current - spacing.sm),
+      });
+    });
+  }, []);
+
+  const queueExerciseProgressScroll = useCallback(() => {
+    pendingExerciseProgressScrollRef.current = true;
+    setTimeout(() => {
+      if (!pendingExerciseProgressScrollRef.current) return;
+
+      pendingExerciseProgressScrollRef.current = false;
+      scrollToExerciseProgress();
+    }, 240);
+  }, [scrollToExerciseProgress]);
+
+  const handleExerciseProgressLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      exerciseProgressYRef.current = event.nativeEvent.layout.y;
+
+      if (!pendingExerciseProgressScrollRef.current) return;
+      pendingExerciseProgressScrollRef.current = false;
+      scrollToExerciseProgress();
+    },
+    [scrollToExerciseProgress],
+  );
+
   const loadStatistics = useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -112,12 +158,13 @@ export function StatisticsScreen() {
         getPersonalRecords(),
       ]);
 
-      const nextSelected =
-        nextOptions.find(
-          (option) => getExerciseOptionKey(option) === selectedKeyRef.current,
-        ) ??
-        nextOptions[0] ??
-        null;
+      const nextSelected = getPreferredProgressOption(nextOptions, {
+        requestedExerciseId,
+        requestedExerciseName,
+        selectedKey: selectedKeyRef.current,
+        useRequestedTarget:
+          requestedExerciseId.length > 0 || requestedExerciseName.length > 0,
+      });
       const nextTrendMetric = getPreferredTrendMetric(
         nextSelected?.exerciseType,
       );
@@ -149,6 +196,10 @@ export function StatisticsScreen() {
       setWeightTrendPoints([]);
       setWeeklySummary(nextWeeklySummary);
       setPersonalRecords(nextPersonalRecords);
+
+      if (shouldScrollToExerciseProgress) {
+        queueExerciseProgressScroll();
+      }
     } catch (loadError) {
       console.error("Failed to load statistics", loadError);
       setOverview(null);
@@ -164,7 +215,12 @@ export function StatisticsScreen() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [
+    queueExerciseProgressScroll,
+    requestedExerciseId,
+    requestedExerciseName,
+    shouldScrollToExerciseProgress,
+  ]);
 
   useFocusEffect(
     useCallback(() => {
@@ -250,6 +306,7 @@ export function StatisticsScreen() {
         />
 
         <ScrollView
+          ref={scrollViewRef}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
           style={styles.scroll}
@@ -351,7 +408,10 @@ export function StatisticsScreen() {
                     <WeeklyOverviewList weeks={weeklySummary} />
                   </Section>
 
-                  <Section title="Exercise Progress">
+                  <Section
+                    onLayout={handleExerciseProgressLayout}
+                    title="Exercise Progress"
+                  >
                     <ExerciseSelector
                       options={progressOptions}
                       selectedOption={selectedOption}
@@ -420,13 +480,15 @@ export function StatisticsScreen() {
 
 function Section({
   children,
+  onLayout,
   title,
 }: {
   children: ReactNode;
+  onLayout?: (event: LayoutChangeEvent) => void;
   title: string;
 }) {
   return (
-    <View style={styles.section}>
+    <View onLayout={onLayout} style={styles.section}>
       <Text style={styles.sectionTitle}>{title}</Text>
       {children}
     </View>
@@ -1339,6 +1401,85 @@ function getExerciseOptionKey(option: ExerciseProgressOption) {
   return option.exerciseId
     ? `id:${option.exerciseId}`
     : `name:${option.exerciseName.trim().toLowerCase()}`;
+}
+
+function getPreferredProgressOption(
+  options: ExerciseProgressOption[],
+  {
+    requestedExerciseId,
+    requestedExerciseName,
+    selectedKey,
+    useRequestedTarget,
+  }: {
+    requestedExerciseId: string;
+    requestedExerciseName: string;
+    selectedKey: string | null;
+    useRequestedTarget: boolean;
+  },
+) {
+  if (useRequestedTarget) {
+    const requestedOption = findExerciseOptionByTarget(
+      options,
+      requestedExerciseId,
+      requestedExerciseName,
+    );
+    if (requestedOption) return requestedOption;
+  }
+
+  if (selectedKey) {
+    const selectedOption = options.find(
+      (option) => getExerciseOptionKey(option) === selectedKey,
+    );
+    if (selectedOption) return selectedOption;
+  }
+
+  return findBenchExerciseOption(options) ?? options[0] ?? null;
+}
+
+function findExerciseOptionByTarget(
+  options: ExerciseProgressOption[],
+  exerciseId: string,
+  exerciseName: string,
+) {
+  const trimmedId = exerciseId.trim();
+  if (trimmedId) {
+    const idMatch = options.find((option) => option.exerciseId === trimmedId);
+    if (idMatch) return idMatch;
+  }
+
+  const normalizedName = normalizeExerciseName(exerciseName);
+  if (!normalizedName) return null;
+
+  return (
+    options.find(
+      (option) => normalizeExerciseName(option.exerciseName) === normalizedName,
+    ) ??
+    options.find((option) =>
+      normalizeExerciseName(option.exerciseName).includes(normalizedName),
+    ) ??
+    null
+  );
+}
+
+function findBenchExerciseOption(options: ExerciseProgressOption[]) {
+  return (
+    options.find(
+      (option) => normalizeExerciseName(option.exerciseName) === "bench press",
+    ) ??
+    options.find((option) =>
+      normalizeExerciseName(option.exerciseName).includes("bench"),
+    ) ??
+    null
+  );
+}
+
+function normalizeExerciseName(value: string) {
+  return value.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function readParam(value: string | string[] | undefined) {
+  if (Array.isArray(value)) return value[0] ?? "";
+  return value ?? "";
 }
 
 function getTopExerciseKey(exercise: TopExerciseStat) {
