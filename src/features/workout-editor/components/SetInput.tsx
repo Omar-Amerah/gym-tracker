@@ -53,7 +53,12 @@ export const SetInput = memo(function SetInput({
         onContentSizeChange={
           onContentSizeChange
             ? (event) => {
-                if (multiline && value.length === 0) return;
+                const currentValue = value ?? "";
+                const hasPlaceholder = Boolean(placeholder?.trim());
+
+                if (multiline && currentValue.length === 0 && !hasPlaceholder) {
+                  return;
+                }
 
                 const height = event.nativeEvent.contentSize.height;
                 onContentSizeChange(height);
