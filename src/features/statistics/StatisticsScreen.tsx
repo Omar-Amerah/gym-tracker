@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -694,7 +695,8 @@ function TrendCard({
   metric: ExerciseTrendMetric;
   points: ExerciseTrendPoint[];
 }) {
-  const summary = getTrendSummary(points, metric);
+  const validPoints = getValidChartPoints(points);
+  const summary = getTrendSummary(validPoints, metric);
   const chartTitle = formatTrendMetricLabel(metric);
 
   return (
@@ -708,7 +710,7 @@ function TrendCard({
         </Text>
       </View>
 
-      {points.length < 2 ? (
+      {validPoints.length < 2 ? (
         <View style={styles.chartEmptyState}>
           <Text style={styles.emptyText}>
             Need more logged sets to show a trend.
@@ -735,7 +737,7 @@ function TrendCard({
             <Text style={styles.flatTrendText}>No change yet</Text>
           ) : null}
 
-          <SimpleTrendChart metric={metric} points={points} />
+          <SimpleTrendChart metric={metric} points={validPoints} />
         </>
       )}
     </View>
@@ -753,15 +755,39 @@ function WeightTrendCard({
   points: ExerciseWeightTrendPoint[];
   range: ExerciseWeightTrendRange;
 }) {
-  const values = points
-    .map((point) => point.value)
-    .filter((value): value is number => value !== null);
+  const transitionProgress = useRef(new Animated.Value(1)).current;
+  const validPoints = getValidChartPoints(points);
+  const values = validPoints.map((point) => point.value);
   const latestValue = values[values.length - 1] ?? null;
   const bestValue = values.length > 0 ? Math.max(...values) : null;
   const changeValue =
     values.length > 1 && latestValue !== null
       ? latestValue - values[0]
       : null;
+  const contentKey = `${range}:${validPoints
+    .map((point) => `${point.key}:${point.value}`)
+    .join("|")}:${validPoints.length}`;
+  const animatedContentStyle = {
+    opacity: transitionProgress,
+    transform: [
+      {
+        translateY: transitionProgress.interpolate({
+          inputRange: [0, 1],
+          outputRange: [6, 0],
+        }),
+      },
+    ],
+  };
+
+  useEffect(() => {
+    transitionProgress.stopAnimation();
+    transitionProgress.setValue(0);
+    Animated.timing(transitionProgress, {
+      duration: 180,
+      toValue: 1,
+      useNativeDriver: true,
+    }).start();
+  }, [contentKey, transitionProgress]);
 
   return (
     <View style={styles.progressCard}>
@@ -777,7 +803,9 @@ function WeightTrendCard({
           <Pressable
             accessibilityRole="button"
             key={option}
-            onPress={() => onRangeChange(option)}
+            onPress={() => {
+              if (option !== range) onRangeChange(option);
+            }}
             style={({ pressed }) => [
               styles.segmentButton,
               range === option && styles.segmentButtonSelected,
@@ -800,36 +828,53 @@ function WeightTrendCard({
         ))}
       </View>
 
-      {isLoading ? (
-        <ActivityIndicator color={colors.accent} />
-      ) : points.length < 2 ? (
-        <View style={styles.chartEmptyState}>
-          <Text style={styles.emptyText}>
-            Need more logged sets to show a trend.
-          </Text>
-        </View>
-      ) : (
-        <>
-          <View style={styles.trendSummaryGrid}>
-            <TrendSummaryItem label="Latest" value={formatWeight(latestValue)} />
-            <TrendSummaryItem label="Best" value={formatWeight(bestValue)} />
-            <TrendSummaryItem
-              label="Change"
-              value={
-                changeValue === null
-                  ? "--"
-                  : `${changeValue > 0 ? "+" : ""}${formatWeight(changeValue)}`
-              }
-            />
+      <View style={styles.trendTransitionFrame}>
+        <Animated.View
+          style={[
+            styles.trendTransitionContent,
+            animatedContentStyle,
+            isLoading && styles.trendTransitionLoading,
+          ]}
+        >
+          {validPoints.length < 2 ? (
+            <View style={styles.chartEmptyState}>
+              <Text style={styles.emptyText}>
+                Need more logged sets to show a trend.
+              </Text>
+            </View>
+          ) : (
+            <>
+              <View style={styles.trendSummaryGrid}>
+                <TrendSummaryItem
+                  label="Latest"
+                  value={formatWeight(latestValue)}
+                />
+                <TrendSummaryItem label="Best" value={formatWeight(bestValue)} />
+                <TrendSummaryItem
+                  label="Change"
+                  value={
+                    changeValue === null
+                      ? "--"
+                      : `${changeValue > 0 ? "+" : ""}${formatWeight(changeValue)}`
+                  }
+                />
+              </View>
+
+              {changeValue === 0 ? (
+                <Text style={styles.flatTrendText}>No change yet</Text>
+              ) : null}
+
+              <WeightTrendChart points={validPoints} />
+            </>
+          )}
+        </Animated.View>
+
+        {isLoading ? (
+          <View pointerEvents="none" style={styles.trendLoadingOverlay}>
+            <ActivityIndicator color={colors.accent} />
           </View>
-
-          {changeValue === 0 ? (
-            <Text style={styles.flatTrendText}>No change yet</Text>
-          ) : null}
-
-          <WeightTrendChart points={points} />
-        </>
-      )}
+        ) : null}
+      </View>
     </View>
   );
 }
@@ -851,10 +896,12 @@ function TrendSummaryItem({
   );
 }
 
-function WeightTrendChart({ points }: { points: ExerciseWeightTrendPoint[] }) {
-  const values = points
-    .map((point) => point.value)
-    .filter((value): value is number => value !== null);
+function WeightTrendChart({
+  points,
+}: {
+  points: ValidChartPoint<ExerciseWeightTrendPoint>[];
+}) {
+  const values = points.map((point) => point.value);
   const scale = useMemo(() => getChartScale(values), [values]);
   const axisLabels = getChartAxisLabels(scale, formatWeight);
 
@@ -867,14 +914,12 @@ function WeightTrendChart({ points }: { points: ExerciseWeightTrendPoint[] }) {
         </View>
         <View style={styles.chartPlot}>
           {points.map((point, index) => {
-            const value = point.value ?? 0;
-            const barHeight = getChartBarHeight(value, scale);
-            const isLatest = index === points.length - 1;
-            const isFirst = index === 0;
+            const barHeight = getChartBarHeight(point.value, scale);
+            const showValueLabel = shouldShowChartLabel(index, points.length);
 
             return (
               <View key={point.key} style={styles.chartColumn}>
-                {(isFirst || isLatest) && point.value !== null ? (
+                {showValueLabel ? (
                   <Text numberOfLines={1} style={styles.chartPointLabel}>
                     {formatWeight(point.value)}
                   </Text>
@@ -882,7 +927,7 @@ function WeightTrendChart({ points }: { points: ExerciseWeightTrendPoint[] }) {
                 <View
                   style={[
                     styles.chartBar,
-                    isLatest && styles.chartBarLatest,
+                    index === points.length - 1 && styles.chartBarLatest,
                     { height: barHeight },
                   ]}
                 />
@@ -914,7 +959,7 @@ function SimpleTrendChart({
   points,
 }: {
   metric: ExerciseTrendMetric;
-  points: ExerciseTrendPoint[];
+  points: ValidChartPoint<ExerciseTrendPoint>[];
 }) {
   const scale = useMemo(
     () => getChartScale(points.map((point) => point.value)),
@@ -935,15 +980,14 @@ function SimpleTrendChart({
         <View style={styles.chartPlot}>
           {points.map((point, index) => {
             const barHeight = getChartBarHeight(point.value, scale);
-            const isLatest = index === points.length - 1;
-            const isFirst = index === 0;
+            const showValueLabel = shouldShowChartLabel(index, points.length);
 
             return (
               <View
                 key={`${point.workoutId}-${index}`}
                 style={styles.chartColumn}
               >
-                {isFirst || isLatest ? (
+                {showValueLabel ? (
                   <Text numberOfLines={1} style={styles.chartPointLabel}>
                     {formatTrendValue(metric, point.value)}
                   </Text>
@@ -951,7 +995,7 @@ function SimpleTrendChart({
                 <View
                   style={[
                     styles.chartBar,
-                    isLatest && styles.chartBarLatest,
+                    index === points.length - 1 && styles.chartBarLatest,
                     { height: barHeight },
                   ]}
                 />
@@ -1141,8 +1185,24 @@ type ChartScale = {
   range: number;
 };
 
+type ValidChartPoint<T extends { value: number | null | undefined }> = T & {
+  value: number;
+};
+
 const CHART_MIN_BAR_HEIGHT = 8;
 const CHART_MAX_BAR_HEIGHT = 104;
+
+function getValidChartPoints<T extends { value: number | null | undefined }>(
+  points: T[],
+): ValidChartPoint<T>[] {
+  return points.filter(
+    (point): point is ValidChartPoint<T> =>
+      point.value !== null &&
+      point.value !== undefined &&
+      Number.isFinite(point.value) &&
+      point.value > 0,
+  );
+}
 
 function getChartScale(values: number[]): ChartScale {
   const finiteValues = values.filter((value) => Number.isFinite(value));
@@ -1233,10 +1293,22 @@ type TrendSummary = {
 };
 
 function getTrendSummary(
-  points: ExerciseTrendPoint[],
+  points: ValidChartPoint<ExerciseTrendPoint>[],
   metric: ExerciseTrendMetric,
 ): TrendSummary {
   const values = points.map((point) => point.value);
+  if (values.length === 0) {
+    return {
+      firstValue: 0,
+      latestValue: 0,
+      bestValue: 0,
+      changeValue: 0,
+      minValue: 0,
+      maxValue: 0,
+      isFlat: true,
+    };
+  }
+
   const firstValue = values[0] ?? 0;
   const latestValue = values[values.length - 1] ?? 0;
   const minValue = Math.min(...values);
@@ -1659,6 +1731,26 @@ const styles = StyleSheet.create({
   },
   segmentTextSelected: {
     color: colors.accent,
+  },
+  trendTransitionFrame: {
+    position: "relative",
+  },
+  trendTransitionContent: {
+    gap: spacing.lg,
+  },
+  trendTransitionLoading: {
+    opacity: 0.52,
+  },
+  trendLoadingOverlay: {
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.18)",
+    borderRadius: radius.md,
+    bottom: 0,
+    justifyContent: "center",
+    left: 0,
+    position: "absolute",
+    right: 0,
+    top: 0,
   },
   trendSummaryGrid: {
     flexDirection: "row",
