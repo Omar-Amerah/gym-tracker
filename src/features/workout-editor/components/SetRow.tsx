@@ -6,11 +6,7 @@ import type { PreviousExercisePerformance } from "@/db/workoutsRepository";
 import { colors } from "@/theme/colors";
 
 import { styles } from "../styles";
-import type {
-  ActiveWorkoutExercise,
-  ActiveWorkoutSet,
-  SetField,
-} from "../types";
+import type { ActiveWorkoutExercise, ActiveWorkoutSet, SetField } from "../types";
 import { isSetFieldMissing } from "../workoutCompletion";
 import { getPreviousPlaceholder, getSetFieldPlan } from "../workoutFieldRules";
 import { getSetLabel } from "../workoutUtils";
@@ -24,21 +20,24 @@ type SetRowProps = {
   onFocusScroll?: (fieldId: string, inputRef: TextInput | null) => void;
   onOpenSetOptions: (exerciseId: string, setId: string) => void;
   onSetNoteHeight: (setId: string, height: number) => void;
-  onUpdateSetField: (
-    exerciseId: string,
-    setId: string,
-    field: SetField,
-    value: string,
-  ) => void;
-  onUpdateSetTimeField: (
-    exerciseId: string,
-    setId: string,
-    value: string,
-  ) => void;
+  onUpdateSetField: (exerciseId: string, setId: string, field: SetField, value: string) => void;
+  onUpdateSetTimeField: (exerciseId: string, setId: string, value: string) => void;
   previousSet: PreviousSet;
   set: ActiveWorkoutSet;
   validationAttempted: boolean;
 };
+
+const SET_NOTE_MIN_HEIGHT = 38;
+const SET_NOTE_MAX_HEIGHT = 88;
+
+function estimateSetNotePlaceholderHeight(text?: string) {
+  if (!text) return undefined;
+  const charsPerLine = Math.max(1, Math.floor(205 / 7.2));
+  const lineCount = text.split("\n").reduce((total, line) => {
+    return total + Math.max(1, Math.ceil(line.length / charsPerLine));
+  }, 0);
+  return Math.max(SET_NOTE_MIN_HEIGHT, Math.min(SET_NOTE_MAX_HEIGHT, lineCount * 17 + 18));
+}
 
 export const SetRow = memo(function SetRow({
   exercise,
@@ -53,23 +52,18 @@ export const SetRow = memo(function SetRow({
   validationAttempted,
 }: SetRowProps) {
   const setFieldPlan = getSetFieldPlan(exercise.exerciseType);
-  const setNoteHeight = noteHeight ?? 38;
-  const prevNotes = previousSet?.notes?.trim()
-    ? `${previousSet.notes.trim()}`
-    : undefined;
+  const prevNotes = previousSet?.notes?.trim() ? `${previousSet.notes.trim()}` : undefined;
+  const setNoteHeight = Math.max(
+    noteHeight ?? SET_NOTE_MIN_HEIGHT,
+    estimateSetNotePlaceholderHeight(prevNotes) ?? SET_NOTE_MIN_HEIGHT,
+  );
 
   return (
     <View style={styles.setRowGroup}>
       <View style={styles.setHeader}>
         <View style={styles.setNumberLabel} />
         {setFieldPlan.map((fieldPlan) => (
-          <Text
-            key={fieldPlan.field}
-            style={[
-              styles.setHeaderText,
-              fieldPlan.width ? { width: fieldPlan.width } : null,
-            ]}
-          >
+          <Text key={fieldPlan.field} style={[styles.setHeaderText, fieldPlan.width ? { width: fieldPlan.width } : null]}>
             {fieldPlan.label}
           </Text>
         ))}
@@ -78,20 +72,8 @@ export const SetRow = memo(function SetRow({
       </View>
 
       <View style={styles.setRow}>
-        <View
-          style={[
-            styles.setCircle,
-            set.type === "warmup" && styles.warmupSetCircle,
-            set.type === "drop" && styles.specialSetCircle,
-          ]}
-        >
-          <Text
-            style={[
-              styles.setCircleText,
-              set.type === "warmup" && styles.warmupSetCircleText,
-              set.type === "drop" && styles.specialSetCircleText,
-            ]}
-          >
+        <View style={[styles.setCircle, set.type === "warmup" && styles.warmupSetCircle, set.type === "drop" && styles.specialSetCircle]}>
+          <Text style={[styles.setCircleText, set.type === "warmup" && styles.warmupSetCircleText, set.type === "drop" && styles.specialSetCircleText]}>
             {getSetLabel(set, exercise.sets)}
           </Text>
         </View>
@@ -100,11 +82,7 @@ export const SetRow = memo(function SetRow({
           <SetInput
             key={fieldPlan.field}
             fieldId={`${set.id}-${fieldPlan.field}`}
-            hasWarning={
-              validationAttempted &&
-              set.type !== "warmup" &&
-              isSetFieldMissing(set, exercise.exerciseType, fieldPlan.field)
-            }
+            hasWarning={validationAttempted && set.type !== "warmup" && isSetFieldMissing(set, exercise.exerciseType, fieldPlan.field)}
             placeholder={getPreviousPlaceholder(fieldPlan.field, previousSet)}
             keyboardType={fieldPlan.keyboardType}
             onFocusScroll={onFocusScroll}
@@ -113,14 +91,9 @@ export const SetRow = memo(function SetRow({
                 onUpdateSetTimeField(exercise.id, set.id, value);
                 return;
               }
-
               onUpdateSetField(exercise.id, set.id, fieldPlan.field, value);
             }}
-            value={
-              fieldPlan.field === "time"
-                ? set.time
-                : (set[fieldPlan.field] ?? "")
-            }
+            value={fieldPlan.field === "time" ? set.time : (set[fieldPlan.field] ?? "")}
             width={fieldPlan.width}
           />
         ))}
@@ -133,34 +106,15 @@ export const SetRow = memo(function SetRow({
           onContentSizeChange={(height) => onSetNoteHeight(set.id, height)}
           onChangeText={(value) => {
             onUpdateSetField(exercise.id, set.id, "notes", value);
-
-            if (value.length === 0) {
-              onSetNoteHeight(set.id, 0);
-            }
+            if (value.length === 0) onSetNoteHeight(set.id, 0);
           }}
-          scrollEnabled={setNoteHeight >= 88}
-          style={[
-            styles.notesInput,
-            {
-              height: setNoteHeight,
-              maxHeight: 88,
-            },
-          ]}
+          scrollEnabled={setNoteHeight >= SET_NOTE_MAX_HEIGHT}
+          style={[styles.notesInput, { height: setNoteHeight, maxHeight: SET_NOTE_MAX_HEIGHT }]}
           value={set.notes}
         />
 
-        <Pressable
-          accessibilityLabel="Set options"
-          accessibilityRole="button"
-          hitSlop={8}
-          onPress={() => onOpenSetOptions(exercise.id, set.id)}
-          style={styles.setOptionsButton}
-        >
-          <MaterialCommunityIcons
-            color={colors.textMuted}
-            name="dots-vertical"
-            size={22}
-          />
+        <Pressable accessibilityLabel="Set options" accessibilityRole="button" hitSlop={8} onPress={() => onOpenSetOptions(exercise.id, set.id)} style={styles.setOptionsButton}>
+          <MaterialCommunityIcons color={colors.textMuted} name="dots-vertical" size={22} />
         </Pressable>
       </View>
     </View>
