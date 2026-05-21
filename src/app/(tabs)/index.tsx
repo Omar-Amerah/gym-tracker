@@ -404,18 +404,25 @@ export default function LogScreen() {
                       disabled={!day.hasWorkout}
                       key={day.key}
                       onPress={() => {
-                        const y = datePositionsRef.current[day.key];
+                        const measuredY = datePositionsRef.current[day.key];
+                        const fallbackY = getEstimatedDateScrollY(
+                          visibleWorkouts,
+                          day.key,
+                        );
+                        const nextY =
+                          typeof measuredY === "number"
+                            ? measuredY
+                            : fallbackY;
                         setJumpSheetOpen(false);
-                        if (typeof y !== "number") {
-                          console.warn("Missing log date position", day.key);
+                        if (typeof nextY !== "number") {
                           return;
                         }
-                        requestAnimationFrame(() => {
+                        setTimeout(() => {
                           scrollViewRef.current?.scrollTo({
-                            y: Math.max(0, y - 12),
+                            y: Math.max(0, nextY - 12),
                             animated: true,
                           });
-                        });
+                        }, animations.sheetDuration + 40);
                       }}
                       style={({ pressed }) => [
                         styles.calendarDay,
@@ -508,6 +515,26 @@ function buildWorkoutDateCounts(workouts: LoggedWorkout[]) {
   }
 
   return counts;
+}
+
+function getEstimatedDateScrollY(workouts: LoggedWorkout[], dateKey: string) {
+  const index = workouts.findIndex(
+    (workout) => getWorkoutDateKey(workout) === dateKey,
+  );
+  if (index < 0) return null;
+
+  const estimatedEntryHeight = 168;
+  const estimatedYearSeparatorHeight = 40;
+  let yearSeparatorsBefore = 0;
+
+  for (let currentIndex = 1; currentIndex <= index; currentIndex += 1) {
+    const previousYear = getWorkoutYear(workouts[currentIndex - 1]);
+    const currentYear = getWorkoutYear(workouts[currentIndex]);
+    if (previousYear !== currentYear) yearSeparatorsBefore += 1;
+  }
+
+  return index * estimatedEntryHeight +
+    yearSeparatorsBefore * estimatedYearSeparatorHeight;
 }
 
 function buildCalendarDays(

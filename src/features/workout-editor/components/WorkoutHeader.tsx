@@ -14,6 +14,7 @@ type WorkoutHeaderProps = {
   onBack: () => void;
   onFinish: () => void;
   onOpenWorkoutMenu: () => void;
+  onTimerPress?: () => void;
   title: string;
   workoutStatus: "draft" | "completed";
 };
@@ -24,6 +25,7 @@ export const WorkoutHeader = memo(function WorkoutHeader({
   onBack,
   onFinish,
   onOpenWorkoutMenu,
+  onTimerPress,
   title,
   workoutStatus,
 }: WorkoutHeaderProps) {
@@ -58,17 +60,20 @@ export const WorkoutHeader = memo(function WorkoutHeader({
       </View>
 
       <View style={styles.headerActions}>
-        <Pressable
-          accessibilityLabel="Workout timer"
-          accessibilityRole="button"
-          style={styles.headerSquareButton}
-        >
-          <MaterialCommunityIcons
-            color={colors.accent}
-            name="timer-outline"
-            size={23}
-          />
-        </Pressable>
+        {onTimerPress ? (
+          <Pressable
+            accessibilityLabel="Workout timer"
+            accessibilityRole="button"
+            onPress={onTimerPress}
+            style={styles.headerSquareButton}
+          >
+            <MaterialCommunityIcons
+              color={colors.accent}
+              name="timer-outline"
+              size={23}
+            />
+          </Pressable>
+        ) : null}
         <PrimaryPillButton
           accessibilityLabel="Finish workout"
           disabled={isSavingWorkout}

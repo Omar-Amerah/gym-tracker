@@ -30,7 +30,9 @@ import { backOrReplace } from "@/utils/navigation";
 import { ExerciseOptionsSheet } from "./components/ExerciseOptionsSheet";
 import { FinishWorkoutSummarySheet } from "./components/FinishWorkoutSummarySheet";
 import { ExerciseSection } from "./components/ExerciseSection";
+import { MiniRestTimerBar } from "./components/MiniRestTimerBar";
 import { ReorderExercisesView } from "./components/ReorderExercisesView";
+import { RestTimerModal } from "./components/RestTimerModal";
 import { SetOptionsSheet } from "./components/SetOptionsSheet";
 import { WorkoutDatePickerSheet } from "./components/WorkoutDatePickerSheet";
 import { WorkoutDetailsForm } from "./components/WorkoutDetailsForm";
@@ -51,6 +53,7 @@ import type {
   WorkoutField,
 } from "./types";
 import { usePreviousPerformance } from "./usePreviousPerformance";
+import { useRestTimer } from "./hooks/useRestTimer";
 import { useWorkoutAutosave } from "./useWorkoutAutosave";
 import { isWorkoutIncomplete } from "./workoutCompletion";
 import { useWorkoutLoader } from "./useWorkoutLoader";
@@ -81,6 +84,7 @@ export function WorkoutEditorScreen() {
   >(null);
   const [, setFocusedFieldId] = useState<string | null>(null);
   const [workoutMenuOpen, setWorkoutMenuOpen] = useState(false);
+  const [restTimerOpen, setRestTimerOpen] = useState(false);
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(
     null,
   );
@@ -106,6 +110,7 @@ export function WorkoutEditorScreen() {
   const isDeletingWorkoutRef = useRef(false);
   const isFinishingWorkoutRef = useRef(false);
   const isLeavingWorkoutRef = useRef(false);
+  const restTimer = useRestTimer();
   const { previousPerformance } = usePreviousPerformance(workout);
   const {
     autosaveStatus,
@@ -819,6 +824,12 @@ export function WorkoutEditorScreen() {
     );
   }
 
+  const miniRestTimerVisible =
+    workout.status === "draft" &&
+    !restTimerOpen &&
+    keyboardHeight === 0 &&
+    restTimer.remainingSeconds > 0;
+
   return (
     <SafeAreaView edges={["top", "bottom"]} style={styles.safeArea}>
       <KeyboardAvoidingView
@@ -831,6 +842,9 @@ export function WorkoutEditorScreen() {
           onBack={requestLeaveWorkout}
           onFinish={finishWorkout}
           onOpenWorkoutMenu={() => setWorkoutMenuOpen(true)}
+          onTimerPress={
+            workout.status === "draft" ? () => setRestTimerOpen(true) : undefined
+          }
           title={headerTitle}
           workoutStatus={workout.status}
         />
@@ -843,7 +857,9 @@ export function WorkoutEditorScreen() {
               paddingBottom:
                 keyboardHeight > 0
                   ? keyboardHeight + insets.bottom + 180
-                  : 140 + insets.bottom,
+                  : 140 +
+                    insets.bottom +
+                    (miniRestTimerVisible ? 112 : 0),
             },
           ]}
           keyboardDismissMode="on-drag"
@@ -979,6 +995,21 @@ export function WorkoutEditorScreen() {
           }}
           summary={finishSummary}
           visible={finishSummary !== null}
+        />
+
+        <RestTimerModal
+          onClose={() => setRestTimerOpen(false)}
+          timer={restTimer}
+          visible={restTimerOpen && workout.status === "draft"}
+        />
+
+        <MiniRestTimerBar
+          isRunning={restTimer.isRunning}
+          onOpen={() => setRestTimerOpen(true)}
+          onStop={restTimer.stopTimer}
+          onToggle={restTimer.toggleTimer}
+          remainingSeconds={restTimer.remainingSeconds}
+          visible={miniRestTimerVisible}
         />
       </KeyboardAvoidingView>
     </SafeAreaView>
