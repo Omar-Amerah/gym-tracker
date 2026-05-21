@@ -303,7 +303,7 @@ export const styles = StyleSheet.create({
     lineHeight: 17,
     minWidth: 80,
     minHeight: 38,
-    paddingTop: 7,
+    paddingTop: 10,
     paddingBottom: 7,
     textAlign: "left",
     textAlignVertical: "top",
@@ -554,4 +554,3 @@ export const styles = StyleSheet.create({
     opacity: 0.72,
   },
 });
-
