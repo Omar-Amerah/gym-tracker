@@ -34,6 +34,7 @@ export const WorkoutInput = memo(function WorkoutInput({
   const inputRef = useRef<TextInput | null>(null);
   const [isFocused, setIsFocused] = useState(false);
   const [isPressableFocused, setIsPressableFocused] = useState(false);
+  const [contentHeight, setContentHeight] = useState<number | null>(null);
 
   return (
     <View style={[styles.workoutInputWrap, wide && styles.wideInput]}>
@@ -69,6 +70,18 @@ export const WorkoutInput = memo(function WorkoutInput({
           keyboardType={keyboardType}
           multiline={multiline}
           onBlur={() => setIsFocused(false)}
+          onContentSizeChange={
+            multiline
+              ? (event) => {
+                  const nextHeight = Math.ceil(
+                    event.nativeEvent.contentSize.height,
+                  );
+                  setContentHeight((current) =>
+                    current === nextHeight ? current : nextHeight,
+                  );
+                }
+              : undefined
+          }
           onChangeText={onChangeText}
           onFocus={() => {
             setIsFocused(true);
@@ -79,6 +92,9 @@ export const WorkoutInput = memo(function WorkoutInput({
             styles.workoutInput,
             isFocused && styles.inputFocused,
             multiline && styles.multilineInput,
+            multiline && contentHeight
+              ? { minHeight: Math.max(74, contentHeight + 18) }
+              : null,
           ]}
           textAlignVertical={multiline ? "top" : "center"}
           value={value ?? ""}

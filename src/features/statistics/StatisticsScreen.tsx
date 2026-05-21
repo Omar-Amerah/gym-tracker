@@ -1,10 +1,9 @@
 import { useFocusEffect } from "@react-navigation/native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  LayoutChangeEvent,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -696,19 +695,25 @@ function TrendCard({
   points: ExerciseTrendPoint[];
 }) {
   const summary = getTrendSummary(points, metric);
+  const chartTitle = formatTrendMetricLabel(metric);
 
   return (
     <View style={styles.progressCard}>
-      <View style={styles.cardTitleRow}>
-        <Text style={styles.progressTitle}>
-          {formatTrendMetricLabel(metric)}
+      <View style={styles.cardTitleGroup}>
+        <Text style={styles.progressTitle}>{chartTitle}</Text>
+        <Text style={styles.progressSubtitle}>
+          {metric === "estimated1RM"
+            ? "Estimated max strength over time"
+            : "Best performance over time"}
         </Text>
       </View>
 
       {points.length < 2 ? (
-        <Text style={styles.emptyText}>
-          Complete this exercise more times to see a trend.
-        </Text>
+        <View style={styles.chartEmptyState}>
+          <Text style={styles.emptyText}>
+            Need more logged sets to show a trend.
+          </Text>
+        </View>
       ) : (
         <>
           <View style={styles.trendSummaryGrid}>
@@ -726,11 +731,11 @@ function TrendCard({
             />
           </View>
 
-          {summary.isFlat ? (
-            <Text style={styles.flatTrendText}>Flat trend</Text>
+          {summary.changeValue === 0 ? (
+            <Text style={styles.flatTrendText}>No change yet</Text>
           ) : null}
 
-          <SimpleTrendChart metric={metric} points={points} summary={summary} />
+          <SimpleTrendChart metric={metric} points={points} />
         </>
       )}
     </View>
@@ -760,8 +765,11 @@ function WeightTrendCard({
 
   return (
     <View style={styles.progressCard}>
-      <View style={styles.cardTitleRow}>
+      <View style={styles.cardTitleGroup}>
         <Text style={styles.progressTitle}>Weight Trend</Text>
+        <Text style={styles.progressSubtitle}>
+          Best working weight by period
+        </Text>
       </View>
 
       <View style={styles.segmentedControl}>
@@ -794,12 +802,12 @@ function WeightTrendCard({
 
       {isLoading ? (
         <ActivityIndicator color={colors.accent} />
-      ) : points.length === 0 ? (
-        <Text style={styles.emptyText}>No weight data for this exercise.</Text>
       ) : points.length < 2 ? (
-        <Text style={styles.emptyText}>
-          Complete this exercise more times with weight to see a trend.
-        </Text>
+        <View style={styles.chartEmptyState}>
+          <Text style={styles.emptyText}>
+            Need more logged sets to show a trend.
+          </Text>
+        </View>
       ) : (
         <>
           <View style={styles.trendSummaryGrid}>
@@ -814,6 +822,10 @@ function WeightTrendCard({
               }
             />
           </View>
+
+          {changeValue === 0 ? (
+            <Text style={styles.flatTrendText}>No change yet</Text>
+          ) : null}
 
           <WeightTrendChart points={points} />
         </>
@@ -843,24 +855,20 @@ function WeightTrendChart({ points }: { points: ExerciseWeightTrendPoint[] }) {
   const values = points
     .map((point) => point.value)
     .filter((value): value is number => value !== null);
-  const minValue = Math.min(...values);
-  const maxValue = Math.max(...values);
-  const isFlat = minValue === maxValue;
-  const range = Math.max(1, maxValue - minValue);
+  const scale = useMemo(() => getChartScale(values), [values]);
+  const axisLabels = getChartAxisLabels(scale, formatWeight);
 
   return (
     <View style={styles.chart}>
       <View style={styles.chartAxisRow}>
         <View style={styles.chartYAxis}>
-          <Text style={styles.chartAxisLabel}>{formatWeight(maxValue)}</Text>
-          <Text style={styles.chartAxisLabel}>{formatWeight(minValue)}</Text>
+          <Text style={styles.chartAxisLabel}>{axisLabels.top}</Text>
+          <Text style={styles.chartAxisLabel}>{axisLabels.bottom}</Text>
         </View>
         <View style={styles.chartPlot}>
           {points.map((point, index) => {
             const value = point.value ?? 0;
-            const barHeight = isFlat
-              ? 64
-              : 18 + ((value - minValue) / range) * 92;
+            const barHeight = getChartBarHeight(value, scale);
             const isLatest = index === points.length - 1;
             const isFirst = index === 0;
 
@@ -883,11 +891,19 @@ function WeightTrendChart({ points }: { points: ExerciseWeightTrendPoint[] }) {
           })}
         </View>
       </View>
-      <View style={styles.chartFooter}>
-        <Text style={styles.chartLabel}>{points[0]?.label ?? ""}</Text>
-        <Text style={styles.chartLabel}>
-          {points[points.length - 1]?.label ?? ""}
-        </Text>
+      <View style={styles.chartXAxisRow}>
+        <View style={styles.chartXAxisSpacer} />
+        <View style={styles.chartXAxisPlot}>
+          {points.map((point, index) => (
+            <Text
+              key={point.key}
+              numberOfLines={2}
+              style={styles.chartLabel}
+            >
+              {shouldShowChartLabel(index, points.length) ? point.label : ""}
+            </Text>
+          ))}
+        </View>
       </View>
     </View>
   );
@@ -896,36 +912,29 @@ function WeightTrendChart({ points }: { points: ExerciseWeightTrendPoint[] }) {
 function SimpleTrendChart({
   metric,
   points,
-  summary,
 }: {
   metric: ExerciseTrendMetric;
   points: ExerciseTrendPoint[];
-  summary: TrendSummary;
 }) {
-  const [width, setWidth] = useState(0);
-  const range = Math.max(1, summary.maxValue - summary.minValue);
-
-  function onLayout(event: LayoutChangeEvent) {
-    setWidth(event.nativeEvent.layout.width);
-  }
+  const scale = useMemo(
+    () => getChartScale(points.map((point) => point.value)),
+    [points],
+  );
+  const axisLabels = getChartAxisLabels(scale, (value) =>
+    formatTrendValue(metric, value),
+  );
 
   return (
-    <View onLayout={onLayout} style={styles.chart}>
+    <View style={styles.chart}>
       <View style={styles.chartAxisRow}>
         <View style={styles.chartYAxis}>
-          <Text style={styles.chartAxisLabel}>
-            {formatTrendValue(metric, summary.maxValue)}
-          </Text>
-          <Text style={styles.chartAxisLabel}>
-            {formatTrendValue(metric, summary.minValue)}
-          </Text>
+          <Text style={styles.chartAxisLabel}>{axisLabels.top}</Text>
+          <Text style={styles.chartAxisLabel}>{axisLabels.bottom}</Text>
         </View>
 
         <View style={styles.chartPlot}>
           {points.map((point, index) => {
-            const barHeight = summary.isFlat
-              ? 64
-              : 18 + ((point.value - summary.minValue) / range) * 92;
+            const barHeight = getChartBarHeight(point.value, scale);
             const isLatest = index === points.length - 1;
             const isFirst = index === 0;
 
@@ -934,7 +943,7 @@ function SimpleTrendChart({
                 key={`${point.workoutId}-${index}`}
                 style={styles.chartColumn}
               >
-                {(isFirst || isLatest) && width > 0 ? (
+                {isFirst || isLatest ? (
                   <Text numberOfLines={1} style={styles.chartPointLabel}>
                     {formatTrendValue(metric, point.value)}
                   </Text>
@@ -951,15 +960,21 @@ function SimpleTrendChart({
           })}
         </View>
       </View>
-      <View style={styles.chartFooter}>
-        <Text style={styles.chartLabel}>
-          {formatDateShort(points[0]?.date ?? null)}
-        </Text>
-        <Text style={styles.chartLabel}>
-          {width > 0
-            ? formatDateShort(points[points.length - 1]?.date ?? null)
-            : ""}
-        </Text>
+      <View style={styles.chartXAxisRow}>
+        <View style={styles.chartXAxisSpacer} />
+        <View style={styles.chartXAxisPlot}>
+          {points.map((point, index) => (
+            <Text
+              key={`${point.workoutId}-${index}`}
+              numberOfLines={2}
+              style={styles.chartLabel}
+            >
+              {shouldShowChartLabel(index, points.length)
+                ? formatDateShort(point.date)
+                : ""}
+            </Text>
+          ))}
+        </View>
       </View>
     </View>
   );
@@ -1115,6 +1130,96 @@ function PersonalRecordsCard({ records }: { records: PersonalRecord[] }) {
       ))}
     </View>
   );
+}
+
+type ChartScale = {
+  isFlat: boolean;
+  max: number;
+  min: number;
+  rawMax: number;
+  rawMin: number;
+  range: number;
+};
+
+const CHART_MIN_BAR_HEIGHT = 8;
+const CHART_MAX_BAR_HEIGHT = 104;
+
+function getChartScale(values: number[]): ChartScale {
+  const finiteValues = values.filter((value) => Number.isFinite(value));
+  if (finiteValues.length === 0) {
+    return {
+      isFlat: true,
+      max: 1,
+      min: 0,
+      rawMax: 0,
+      rawMin: 0,
+      range: 1,
+    };
+  }
+
+  const rawMin = Math.min(...finiteValues);
+  const rawMax = Math.max(...finiteValues);
+  const isFlat = rawMin === rawMax;
+
+  if (isFlat) {
+    const max = rawMax > 0 ? rawMax * 1.12 : 1;
+    return {
+      isFlat,
+      max,
+      min: 0,
+      rawMax,
+      rawMin,
+      range: Math.max(1, max),
+    };
+  }
+
+  const rawRange = rawMax - rawMin;
+  const padding = rawRange * 0.12;
+  const min = Math.max(0, rawMin - padding);
+  const max = rawMax + padding;
+
+  return {
+    isFlat,
+    max,
+    min,
+    rawMax,
+    rawMin,
+    range: Math.max(1, max - min),
+  };
+}
+
+function getChartAxisLabels(
+  scale: ChartScale,
+  formatter: (value: number) => string,
+) {
+  if (scale.isFlat) {
+    return {
+      top: formatter(scale.rawMax),
+      bottom: scale.rawMax > 0 ? formatter(0) : "",
+    };
+  }
+
+  const top = formatter(scale.rawMax);
+  const bottom = formatter(scale.rawMin);
+
+  return {
+    top,
+    bottom: top === bottom ? "" : bottom,
+  };
+}
+
+function getChartBarHeight(value: number, scale: ChartScale) {
+  const progress = (value - scale.min) / scale.range;
+  return (
+    CHART_MIN_BAR_HEIGHT +
+    Math.max(0, Math.min(1, progress)) *
+      (CHART_MAX_BAR_HEIGHT - CHART_MIN_BAR_HEIGHT)
+  );
+}
+
+function shouldShowChartLabel(index: number, count: number) {
+  if (count <= 5) return true;
+  return index === 0 || index === count - 1 || index === Math.floor(count / 2);
 }
 
 type TrendSummary = {
@@ -1513,15 +1618,19 @@ const styles = StyleSheet.create({
     ...typography.workoutTitle,
     lineHeight: 22,
   },
+  progressSubtitle: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0,
+    lineHeight: 16,
+  },
   progressMeta: {
     color: colors.textMuted,
     ...typography.exercise,
   },
-  cardTitleRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.md,
-    justifyContent: "space-between",
+  cardTitleGroup: {
+    gap: spacing.xs,
   },
   segmentedControl: {
     backgroundColor: colors.background,
@@ -1586,17 +1695,27 @@ const styles = StyleSheet.create({
     letterSpacing: 0,
     lineHeight: 16,
   },
+  chartEmptyState: {
+    alignItems: "center",
+    backgroundColor: colors.background,
+    borderColor: colors.borderMuted,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    justifyContent: "center",
+    minHeight: 92,
+    padding: spacing.lg,
+  },
   chart: {
-    gap: spacing.md,
+    gap: spacing.sm,
   },
   chartAxisRow: {
     flexDirection: "row",
-    gap: spacing.md,
+    gap: spacing.sm,
   },
   chartYAxis: {
     justifyContent: "space-between",
-    paddingVertical: spacing.card,
-    width: 62,
+    paddingVertical: spacing.sm,
+    width: 56,
   },
   chartAxisLabel: {
     color: colors.textMuted,
@@ -1615,9 +1734,11 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: "row",
     gap: spacing.xs,
-    height: 150,
+    height: 136,
     overflow: "hidden",
-    padding: spacing.card,
+    paddingHorizontal: spacing.sm,
+    paddingBottom: spacing.sm,
+    paddingTop: spacing.sm,
   },
   chartColumn: {
     alignItems: "center",
@@ -1631,29 +1752,40 @@ const styles = StyleSheet.create({
     letterSpacing: 0,
     lineHeight: 11,
     marginBottom: spacing.xs,
-    maxWidth: 54,
+    maxWidth: 58,
     textAlign: "center",
   },
   chartBar: {
     backgroundColor: colors.accent,
-    borderRadius: radius.pill,
+    borderRadius: 10,
     minHeight: 4,
     opacity: 0.86,
-    width: "62%",
+    width: 22,
   },
   chartBarLatest: {
     opacity: 1,
   },
-  chartFooter: {
+  chartXAxisRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    gap: spacing.sm,
+  },
+  chartXAxisSpacer: {
+    width: 56,
+  },
+  chartXAxisPlot: {
+    flex: 1,
+    flexDirection: "row",
+    gap: spacing.xs,
   },
   chartLabel: {
     color: colors.textMuted,
+    flex: 1,
     fontSize: 11,
     fontWeight: "700",
     letterSpacing: 0,
     lineHeight: 14,
+    minHeight: 28,
+    textAlign: "center",
   },
   progressSummaryBox: {
     backgroundColor: colors.background,

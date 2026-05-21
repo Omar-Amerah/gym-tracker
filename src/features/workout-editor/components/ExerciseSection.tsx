@@ -1,5 +1,5 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { memo, useRef, useState } from "react";
+import { memo, useMemo, useRef, useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
 
 import type { PreviousExercisePerformance } from "@/db/workoutsRepository";
@@ -60,7 +60,29 @@ export const ExerciseSection = memo(function ExerciseSection({
 }: ExerciseSectionProps) {
   const exerciseNoteRef = useRef<TextInput | null>(null);
   const [isNoteFocused, setIsNoteFocused] = useState(false);
+  const [noteWidth, setNoteWidth] = useState(0);
   const previousExerciseNote = previousPerformance?.notes?.trim() || undefined;
+  const estimatedPlaceholderHeight = useMemo(() => {
+    if (exercise.notes || !previousExerciseNote || !noteWidth) return null;
+
+    const horizontalPadding = 24;
+    const averageCharacterWidth = 8;
+    const lineHeight = 18;
+    const verticalPadding = 22;
+    const availableWidth = Math.max(1, noteWidth - horizontalPadding);
+    const charactersPerLine = Math.max(
+      1,
+      Math.floor(availableWidth / averageCharacterWidth),
+    );
+    const explicitLines = previousExerciseNote.split(/\r?\n/);
+    const lineCount = explicitLines.reduce(
+      (total, line) =>
+        total + Math.max(1, Math.ceil(line.length / charactersPerLine)),
+      0,
+    );
+
+    return Math.max(48, lineCount * lineHeight + verticalPadding);
+  }, [exercise.notes, noteWidth, previousExerciseNote]);
   const exerciseComplete = isExerciseComplete(exercise);
 
   return (
@@ -106,6 +128,12 @@ export const ExerciseSection = memo(function ExerciseSection({
           }}
           onChangeText={(value) => onUpdateExerciseNote(exercise.id, value)}
           onBlur={() => setIsNoteFocused(false)}
+          onLayout={(event) => {
+            const nextWidth = Math.ceil(event.nativeEvent.layout.width);
+            setNoteWidth((current) =>
+              current === nextWidth ? current : nextWidth,
+            );
+          }}
           onFocus={() => {
             setIsNoteFocused(true);
             onFocusScroll?.(
@@ -115,12 +143,15 @@ export const ExerciseSection = memo(function ExerciseSection({
           }}
           placeholder={previousExerciseNote || "Exercise note"}
           placeholderTextColor={colors.textMuted}
-          scrollEnabled
+          scrollEnabled={false}
           style={[
             styles.exerciseNoteInput,
             isNoteFocused && styles.inputFocused,
             {
-              height: noteHeights[`exercise-${exercise.id}`] ?? 48,
+              minHeight: Math.max(
+                noteHeights[`exercise-${exercise.id}`] ?? 48,
+                estimatedPlaceholderHeight ?? 48,
+              ),
             },
           ]}
           textAlignVertical="top"

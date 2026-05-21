@@ -14,6 +14,7 @@ type SetInputProps = {
   onContentSizeChange?: (height: number) => void;
   onFocusScroll?: (fieldId: string, inputRef: TextInput | null) => void;
   placeholder?: string;
+  scrollEnabled?: boolean;
   style?: StyleProp<TextStyle>;
   value: string;
   width?: number;
@@ -28,6 +29,7 @@ export const SetInput = memo(function SetInput({
   onContentSizeChange,
   onChangeText,
   onFocusScroll,
+  scrollEnabled,
   style,
   value,
   width,
@@ -51,6 +53,8 @@ export const SetInput = memo(function SetInput({
         onContentSizeChange={
           onContentSizeChange
             ? (event) => {
+                if (multiline && value.length === 0) return;
+
                 const height = event.nativeEvent.contentSize.height;
                 onContentSizeChange(height);
               }
@@ -63,7 +67,7 @@ export const SetInput = memo(function SetInput({
         }}
         placeholder={placeholder}
         placeholderTextColor={colors.textMuted}
-        scrollEnabled={multiline}
+        scrollEnabled={multiline ? scrollEnabled : undefined}
         style={[
           styles.setInput,
           width ? { width } : null,

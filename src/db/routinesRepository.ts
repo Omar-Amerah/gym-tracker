@@ -28,7 +28,7 @@ export async function listRoutines(): Promise<Routine[]> {
     "SELECT id, name, targetType, notes, sortOrder FROM routines ORDER BY sortOrder ASC, createdAt ASC",
   );
   const exercises = await db.getAllAsync<RoutineExerciseRow>(
-    `SELECT re.id, re.routineId, re.exerciseId, re.name, re.notes, re.warmUpSets,
+    `SELECT re.id, re.routineId, re.exerciseId, COALESCE(e.name, re.name) AS name, re.notes, re.warmUpSets,
             re.workingSets, re.sortOrder, e.exerciseType
      FROM routine_exercises re
      LEFT JOIN exercises e ON e.id = re.exerciseId

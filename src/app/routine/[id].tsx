@@ -89,7 +89,7 @@ export default function RoutineDetailScreen() {
     try {
       const activeDraft = await getActiveDraftWorkout();
       if (!activeDraft) {
-        router.push({
+        router.replace({
           pathname: "/active-workout/[routineId]",
           params: { routineId },
         });
@@ -117,7 +117,7 @@ export default function RoutineDetailScreen() {
         {
           text: "Resume",
           onPress: () => {
-            router.push({
+            router.replace({
               pathname: "/workout/[workoutId]",
               params: { workoutId: activeDraftId },
             });
@@ -129,7 +129,7 @@ export default function RoutineDetailScreen() {
           onPress: () => {
             void deleteDraftWorkout(activeDraftId)
               .then(() => {
-                router.push({
+                router.replace({
                   pathname: "/active-workout/[routineId]",
                   params: { routineId },
                 });
@@ -182,6 +182,20 @@ export default function RoutineDetailScreen() {
         },
       ],
     );
+  }
+
+  function editSelectedExercise() {
+    if (!selectedExercise?.exerciseId) return;
+
+    const libraryExerciseId = selectedExercise.exerciseId;
+    setSelectedExerciseId(null);
+    router.push({
+      pathname: "/edit-exercise/[id]",
+      params: {
+        id: libraryExerciseId,
+        returnTo: `/routine/${routineId}`,
+      },
+    });
   }
 
   return (
@@ -424,6 +438,20 @@ export default function RoutineDetailScreen() {
 
               <Pressable
                 accessibilityRole="button"
+                onPress={editSelectedExercise}
+                style={[styles.sheetAction, { marginTop: 8 }]}
+              >
+                <MaterialCommunityIcons
+                  color={colors.textPrimary}
+                  name="pencil-outline"
+                  size={24}
+                  style={styles.sheetIcon}
+                />
+                <Text style={styles.sheetText}>Edit Exercise</Text>
+              </Pressable>
+
+              <Pressable
+                accessibilityRole="button"
                 onPress={() => {
                   setSelectedExerciseId(null);
                   router.push({
@@ -431,7 +459,7 @@ export default function RoutineDetailScreen() {
                     params: { id: routineId },
                   });
                 }}
-                style={[styles.sheetAction, { marginTop: 8 }]}
+                style={styles.sheetAction}
               >
                 <MaterialCommunityIcons
                   color={colors.textPrimary}

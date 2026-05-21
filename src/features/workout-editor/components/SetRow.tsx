@@ -53,6 +53,7 @@ export const SetRow = memo(function SetRow({
   validationAttempted,
 }: SetRowProps) {
   const setFieldPlan = getSetFieldPlan(exercise.exerciseType);
+  const setNoteHeight = noteHeight ?? 38;
   const prevNotes = previousSet?.notes?.trim()
     ? `${previousSet.notes.trim()}`
     : undefined;
@@ -130,13 +131,19 @@ export const SetRow = memo(function SetRow({
           multiline
           onFocusScroll={onFocusScroll}
           onContentSizeChange={(height) => onSetNoteHeight(set.id, height)}
-          onChangeText={(value) =>
-            onUpdateSetField(exercise.id, set.id, "notes", value)
-          }
+          onChangeText={(value) => {
+            onUpdateSetField(exercise.id, set.id, "notes", value);
+
+            if (value.length === 0) {
+              onSetNoteHeight(set.id, 0);
+            }
+          }}
+          scrollEnabled={setNoteHeight >= 88}
           style={[
             styles.notesInput,
             {
-              height: noteHeight ?? 38,
+              height: setNoteHeight,
+              maxHeight: 88,
             },
           ]}
           value={set.notes}

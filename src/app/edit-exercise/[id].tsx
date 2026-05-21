@@ -1,5 +1,5 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { type Href, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Alert,
@@ -23,6 +23,7 @@ import {
   upsertExercise,
 } from "@/db/exercisesRepository";
 import type { CategoryRecord } from "@/db/schema";
+import { useRoutines } from "@/state/routines";
 import { colors } from "@/theme/colors";
 import { radius } from "@/theme/radius";
 import { spacing } from "@/theme/spacing";
@@ -49,7 +50,11 @@ const THUMB_SIZE = 22;
 
 export default function EditExerciseScreen() {
   const router = useRouter();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, returnTo } = useLocalSearchParams<{
+    id: string;
+    returnTo?: string;
+  }>();
+  const { refreshRoutines } = useRoutines();
 
   const [categories, setCategories] = useState<CategoryRecord[]>([]);
   const [name, setName] = useState("");
@@ -63,6 +68,19 @@ export default function EditExerciseScreen() {
   const trackWidthRef = useRef(1);
 
   const isBodyweight = exerciseType.toLowerCase().includes("bodyweight");
+  const returnHref =
+    typeof returnTo === "string" && returnTo.length > 0
+      ? (returnTo as Href)
+      : null;
+
+  const leaveScreen = () => {
+    if (returnHref) {
+      router.replace(returnHref);
+      return;
+    }
+
+    router.back();
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -140,12 +158,14 @@ export default function EditExerciseScreen() {
       singleArm: "No",
       bodyweightMultiplier: multiplier,
     });
-    router.back();
+    await refreshRoutines();
+    leaveScreen();
   };
 
   const handleDeleteExercise = async () => {
     await deleteExercise(id);
-    router.back();
+    await refreshRoutines();
+    leaveScreen();
   };
 
   const confirmDeleteExercise = () => {
@@ -183,7 +203,7 @@ export default function EditExerciseScreen() {
       <View style={styles.screen}>
         <AppHeader
           leftAction="back"
-          onBackPress={() => router.back()}
+          onBackPress={leaveScreen}
           title="Edit Exercise"
           rightAccessory={
             <PrimaryPillButton

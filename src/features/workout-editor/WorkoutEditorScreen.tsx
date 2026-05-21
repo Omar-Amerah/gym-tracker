@@ -1,7 +1,9 @@
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
+  BackHandler,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -25,7 +27,6 @@ import {
   registerActiveWorkoutAddExerciseHandler,
   registerActiveWorkoutReplacementHandler,
 } from "@/state/activeWorkoutSelection";
-import { backOrReplace } from "@/utils/navigation";
 import { ExerciseOptionsSheet } from "./components/ExerciseOptionsSheet";
 import { ExerciseSection } from "./components/ExerciseSection";
 import { FinishWorkoutSummarySheet } from "./components/FinishWorkoutSummarySheet";
@@ -73,6 +74,7 @@ import {
 
 export function WorkoutEditorScreen() {
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation();
   const router = useRouter();
 
   const [workout, setWorkout] = useState<ActiveWorkout | null>(null);
@@ -85,6 +87,7 @@ export function WorkoutEditorScreen() {
   const [, setFocusedFieldId] = useState<string | null>(null);
   const [workoutMenuOpen, setWorkoutMenuOpen] = useState(false);
   const [restTimerOpen, setRestTimerOpen] = useState(false);
+  const [hasOpenedRestTimer, setHasOpenedRestTimer] = useState(false);
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(
     null,
   );
@@ -107,9 +110,11 @@ export function WorkoutEditorScreen() {
   const scrollFocusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  const isRoutingToLogRef = useRef(false);
   const isDeletingWorkoutRef = useRef(false);
   const isFinishingWorkoutRef = useRef(false);
   const restTimer = useRestTimer();
+  const { stopTimer } = restTimer;
   const { previousPerformance } = usePreviousPerformance(workout);
   const {
     autosaveStatus,
@@ -132,6 +137,12 @@ export function WorkoutEditorScreen() {
   useEffect(() => {
     setValidationAttempted(false);
   }, [editorKey]);
+
+  useEffect(() => {
+    setHasOpenedRestTimer(false);
+    setRestTimerOpen(false);
+    stopTimer();
+  }, [editorKey, stopTimer]);
 
   useEffect(() => {
     const showSubscription = Keyboard.addListener(
@@ -459,9 +470,41 @@ export function WorkoutEditorScreen() {
     void saveFinishedWorkout(completedWorkout);
   };
 
+  const routeToLog = useCallback(() => {
+    if (isRoutingToLogRef.current) return;
+
+    isRoutingToLogRef.current = true;
+    router.replace("/");
+  }, [router]);
+
   const requestLeaveWorkout = useCallback(() => {
-    backOrReplace("/routines");
-  }, []);
+    routeToLog();
+  }, [routeToLog]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const subscription = BackHandler.addEventListener(
+        "hardwareBackPress",
+        () => {
+          routeToLog();
+          return true;
+        },
+      );
+
+      return () => subscription.remove();
+    }, [routeToLog]),
+  );
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener("beforeRemove", (event) => {
+      if (isRoutingToLogRef.current) return;
+
+      event.preventDefault();
+      routeToLog();
+    });
+
+    return unsubscribe;
+  }, [navigation, routeToLog]);
 
   const openDatePicker = useCallback(() => {
     if (!workout) return;
@@ -589,7 +632,7 @@ export function WorkoutEditorScreen() {
             setWorkout(null);
             void deleteWorkout(workoutIdToDelete)
               .then(() => {
-                backOrReplace("/routines");
+                routeToLog();
               })
               .catch((error) => {
                 console.warn("Failed to delete workout", error);
@@ -653,26 +696,30 @@ export function WorkoutEditorScreen() {
 
   const getSetNoteHeight = useCallback((contentHeight: number) => {
     const DEFAULT_HEIGHT = 38;
-    const MAX_HEIGHT = 120;
-    const ONE_LINE_THRESHOLD = 50;
+    const MAX_HEIGHT = 88;
+    const ONE_LINE_THRESHOLD = 44;
+    const VERTICAL_PADDING = 4;
 
     if (contentHeight <= ONE_LINE_THRESHOLD) {
       return DEFAULT_HEIGHT;
     }
 
-    return Math.max(DEFAULT_HEIGHT, Math.min(MAX_HEIGHT, contentHeight));
+    return Math.min(
+      MAX_HEIGHT,
+      Math.max(DEFAULT_HEIGHT, Math.ceil(contentHeight) + VERTICAL_PADDING),
+    );
   }, []);
 
   const getExerciseNoteHeight = useCallback((contentHeight: number) => {
     const DEFAULT_HEIGHT = 48;
-    const MAX_HEIGHT = 150;
-    const ONE_LINE_THRESHOLD = 62;
+    const ONE_LINE_THRESHOLD = 48;
+    const VERTICAL_PADDING = 22;
 
     if (contentHeight <= ONE_LINE_THRESHOLD) {
       return DEFAULT_HEIGHT;
     }
 
-    return Math.max(DEFAULT_HEIGHT, Math.min(MAX_HEIGHT, contentHeight));
+    return Math.max(DEFAULT_HEIGHT, Math.ceil(contentHeight) + VERTICAL_PADDING);
   }, []);
 
   const scrollFocusedInputIntoView = useCallback(
@@ -702,23 +749,46 @@ export function WorkoutEditorScreen() {
   );
   const updateExerciseNoteHeight = useCallback(
     (exerciseId: string, height: number) => {
-      setNoteHeights((current) => ({
-        ...current,
-        [`exercise-${exerciseId}`]: getExerciseNoteHeight(height),
-      }));
+      const nextHeight = getExerciseNoteHeight(height);
+      const key = `exercise-${exerciseId}`;
+
+      setNoteHeights((current) =>
+        current[key] === nextHeight
+          ? current
+          : {
+              ...current,
+              [key]: nextHeight,
+            },
+      );
     },
     [getExerciseNoteHeight],
   );
 
   const updateSetNoteHeight = useCallback(
     (setId: string, height: number) => {
-      setNoteHeights((current) => ({
-        ...current,
-        [setId]: getSetNoteHeight(height),
-      }));
+      const nextHeight = getSetNoteHeight(height);
+
+      setNoteHeights((current) =>
+        current[setId] === nextHeight
+          ? current
+          : {
+              ...current,
+              [setId]: nextHeight,
+            },
+      );
     },
     [getSetNoteHeight],
   );
+
+  const openRestTimer = useCallback(() => {
+    setHasOpenedRestTimer(true);
+    setRestTimerOpen(true);
+  }, []);
+
+  const stopRestTimer = useCallback(() => {
+    stopTimer();
+    setHasOpenedRestTimer(false);
+  }, [stopTimer]);
 
   const openSetOptions = useCallback((exerciseId: string, setId: string) => {
     setSelectedSet({ exerciseId, setId });
@@ -767,6 +837,7 @@ export function WorkoutEditorScreen() {
   }
 
   const miniRestTimerVisible =
+    hasOpenedRestTimer &&
     workout.status === "draft" &&
     !restTimerOpen &&
     keyboardHeight === 0 &&
@@ -786,7 +857,7 @@ export function WorkoutEditorScreen() {
           onOpenWorkoutMenu={() => setWorkoutMenuOpen(true)}
           onTimerPress={
             workout.status === "draft"
-              ? () => setRestTimerOpen(true)
+              ? openRestTimer
               : undefined
           }
           title={headerTitle}
@@ -931,7 +1002,7 @@ export function WorkoutEditorScreen() {
         <FinishWorkoutSummarySheet
           onDone={() => {
             setFinishSummary(null);
-            router.replace("/");
+            routeToLog();
           }}
           summary={finishSummary}
           visible={finishSummary !== null}
@@ -945,8 +1016,8 @@ export function WorkoutEditorScreen() {
 
         <MiniRestTimerBar
           isRunning={restTimer.isRunning}
-          onOpen={() => setRestTimerOpen(true)}
-          onStop={restTimer.stopTimer}
+          onOpen={openRestTimer}
+          onStop={stopRestTimer}
           onToggle={restTimer.toggleTimer}
           remainingSeconds={restTimer.remainingSeconds}
           visible={miniRestTimerVisible}
