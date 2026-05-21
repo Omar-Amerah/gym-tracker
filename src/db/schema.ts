@@ -144,7 +144,6 @@ export const DEFAULT_EXERCISES: ExerciseRecord[] = [
     "Single-Arm Dumbbell Row",
     "Back",
     "Strength: Weight, Reps",
-    "Yes",
   ),
   createSeedExercise(
     "t-bar-row",
@@ -276,7 +275,6 @@ export const DEFAULT_EXERCISES: ExerciseRecord[] = [
     "Single-Arm Landmine Punch Press",
     "Chest",
     "Strength: Weight, Reps",
-    "No",
   ),
 
   // Legs
@@ -298,7 +296,6 @@ export const DEFAULT_EXERCISES: ExerciseRecord[] = [
     "Bulgarian Split Squats",
     "Legs",
     "Strength: Weight, Reps",
-    "Yes",
   ),
   createSeedExercise(
     "calf-raises",
@@ -337,7 +334,6 @@ export const DEFAULT_EXERCISES: ExerciseRecord[] = [
     "Standing Band Knee Drives",
     "Legs",
     "Strength: Weight, Reps",
-    "Yes",
   ),
 
   // Shoulders
@@ -452,7 +448,6 @@ function createSeedExercise(
   name: string,
   category: string,
   exerciseType: string = "Strength: Weight, Reps",
-  singleArm: string = "No",
 ): ExerciseRecord {
   const createdAt = "2026-05-18T00:00:00.000Z";
 
@@ -461,7 +456,7 @@ function createSeedExercise(
     name,
     category,
     exerciseType,
-    singleArm,
+    singleArm: null,
     bodyweightMultiplier: 100,
     createdAt,
     updatedAt: createdAt,
