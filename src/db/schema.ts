@@ -276,7 +276,7 @@ export const DEFAULT_EXERCISES: ExerciseRecord[] = [
     "Single-Arm Landmine Punch Press",
     "Chest",
     "Strength: Weight, Reps",
-    "Yes",
+    "No",
   ),
 
   // Legs
@@ -452,7 +452,7 @@ function createSeedExercise(
   name: string,
   category: string,
   exerciseType: string = "Strength: Weight, Reps",
-  singleArm: string = "Default (Yes)",
+  singleArm: string = "No",
 ): ExerciseRecord {
   const createdAt = "2026-05-18T00:00:00.000Z";
 
