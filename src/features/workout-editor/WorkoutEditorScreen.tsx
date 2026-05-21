@@ -1,4 +1,3 @@
-import { useNavigation } from "@react-navigation/native";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -74,7 +73,6 @@ import {
 
 export function WorkoutEditorScreen() {
   const insets = useSafeAreaInsets();
-  const navigation = useNavigation();
   const router = useRouter();
 
   const [workout, setWorkout] = useState<ActiveWorkout | null>(null);
@@ -111,7 +109,6 @@ export function WorkoutEditorScreen() {
   );
   const isDeletingWorkoutRef = useRef(false);
   const isFinishingWorkoutRef = useRef(false);
-  const isLeavingWorkoutRef = useRef(false);
   const restTimer = useRestTimer();
   const { previousPerformance } = usePreviousPerformance(workout);
   const {
@@ -463,72 +460,8 @@ export function WorkoutEditorScreen() {
   };
 
   const requestLeaveWorkout = useCallback(() => {
-    if (
-      !workout ||
-      workout.status !== "draft" ||
-      !isWorkoutIncomplete(workout)
-    ) {
-      backOrReplace("/routines");
-      return;
-    }
-
-    setValidationAttempted(true);
-    Alert.alert(
-      "Leave unfinished workout?",
-      "Some sets are incomplete. Your workout is autosaved, but it is not finished.",
-      [
-        { text: "Stay", style: "cancel" },
-        {
-          text: "Leave Anyway",
-          onPress: () => {
-            isLeavingWorkoutRef.current = true;
-            backOrReplace("/routines");
-          },
-        },
-      ],
-    );
-  }, [workout]);
-
-  useEffect(() => {
-    return navigation.addListener("beforeRemove", (event) => {
-      if (
-        isDeletingWorkoutRef.current ||
-        isFinishingWorkoutRef.current ||
-        isLeavingWorkoutRef.current ||
-        !workout ||
-        workout.status !== "draft" ||
-        !isWorkoutIncomplete(workout)
-      ) {
-        return;
-      }
-
-      const actionType = event.data.action.type;
-      if (
-        actionType !== "GO_BACK" &&
-        actionType !== "POP" &&
-        actionType !== "POP_TO_TOP"
-      ) {
-        return;
-      }
-
-      event.preventDefault();
-      setValidationAttempted(true);
-      Alert.alert(
-        "Leave unfinished workout?",
-        "Some sets are incomplete. Your workout is autosaved, but it is not finished.",
-        [
-          { text: "Stay", style: "cancel" },
-          {
-            text: "Leave Anyway",
-            onPress: () => {
-              isLeavingWorkoutRef.current = true;
-              navigation.dispatch(event.data.action);
-            },
-          },
-        ],
-      );
-    });
-  }, [navigation, workout]);
+    backOrReplace("/routines");
+  }, []);
 
   const openDatePicker = useCallback(() => {
     if (!workout) return;

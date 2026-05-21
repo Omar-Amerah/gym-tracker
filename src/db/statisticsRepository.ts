@@ -1,9 +1,10 @@
 import { getDatabase } from "@/db/database";
 
 export type StatsOverview = {
-  activeDraftWorkoutId: string | null;
-  activeDraftWorkoutName: string | null;
   averageWorkoutsPerWeekLast4Weeks: number;
+  lastCompletedWorkoutDate: string | null;
+  lastCompletedWorkoutId: string | null;
+  lastCompletedWorkoutName: string | null;
   totalCompletedSets: number;
   totalCompletedWorkouts: number;
   totalExercisesPerformed: number;
@@ -71,6 +72,14 @@ export type ExerciseTrendPoint = {
   workoutName: string;
 };
 
+export type ExerciseWeightTrendRange = "weekly" | "monthly" | "yearly";
+
+export type ExerciseWeightTrendPoint = {
+  key: string;
+  label: string;
+  value: number | null;
+};
+
 export type PersonalRecord = {
   date: string;
   exerciseId: string | null;
@@ -110,11 +119,6 @@ export type BodyweightStats = {
 
 type CountRow = {
   count: number;
-};
-
-type DraftRow = {
-  id: string;
-  name: string;
 };
 
 type CompletedWorkoutRow = {
@@ -188,13 +192,9 @@ export async function getStatsOverview(): Promise<StatsOverview> {
      INNER JOIN workouts w ON w.id = we.workoutId
      WHERE w.status = 'completed'`,
   );
-  const activeDraft = await db.getFirstAsync<DraftRow>(
-    `SELECT id, name
-     FROM workouts
-     WHERE status = 'draft'
-     ORDER BY updatedAt DESC, createdAt DESC
-     LIMIT 1`,
-  );
+  const lastCompletedWorkout = [...workouts].sort(
+    (a, b) => getWorkoutSortValue(b) - getWorkoutSortValue(a),
+  )[0];
 
   const now = new Date();
   const today = startOfDay(now);
@@ -214,10 +214,11 @@ export async function getStatsOverview(): Promise<StatsOverview> {
       Math.round((countWorkoutsSince(workouts, last4WeeksStart) / 4) * 10) / 10,
     totalCompletedSets: totalSets?.count ?? 0,
     totalExercisesPerformed: totalExercises?.count ?? 0,
-    activeDraftWorkoutId: activeDraft?.id ?? null,
-    activeDraftWorkoutName: activeDraft
-      ? activeDraft.name.trim() || "Untitled Workout"
+    lastCompletedWorkoutId: lastCompletedWorkout?.id ?? null,
+    lastCompletedWorkoutName: lastCompletedWorkout
+      ? lastCompletedWorkout.name.trim() || "Untitled Workout"
       : null,
+    lastCompletedWorkoutDate: lastCompletedWorkout?.date ?? null,
   };
 }
 
@@ -418,6 +419,95 @@ export async function getExerciseTrend({
     .filter((point): point is ExerciseTrendPoint => point !== null);
 
   return points.slice(Math.max(0, points.length - Math.max(2, limit)));
+}
+
+export async function getExerciseWeightTrend({
+  exerciseId,
+  exerciseName,
+  range,
+}: {
+  exerciseId?: string | null;
+  exerciseName: string;
+  range: ExerciseWeightTrendRange;
+}): Promise<ExerciseWeightTrendPoint[]> {
+  const matches = await getMatchingExercisePerformances(exerciseId, exerciseName);
+  const weightedPerformances = matches
+    .map((performance) => {
+      const sets = getBestCandidateSets(performance.sets);
+      const bestWeight = getMaxNumber(sets.map((set) => set.kg));
+      const date = parseWorkoutDate(performance.workoutDate);
+      if (!date || !bestWeight) return null;
+      return { date, value: bestWeight };
+    })
+    .filter(
+      (point): point is { date: Date; value: number } => point !== null,
+    );
+
+  if (weightedPerformances.length === 0) return [];
+
+  if (range === "weekly") {
+    const today = startOfDay(new Date());
+    const thisWeekStart = startOfWeekMonday(today);
+    return Array.from({ length: 4 }, (_, index) => {
+      const weekStart = addDays(thisWeekStart, (3 - index) * -7);
+      const weekEnd = addDays(weekStart, 6);
+      const values = weightedPerformances
+        .filter(({ date }) => {
+          const time = startOfDay(date).getTime();
+          return time >= weekStart.getTime() && time <= weekEnd.getTime();
+        })
+        .map(({ value }) => value);
+      return {
+        key: formatPeriodKey(weekStart),
+        label:
+          index === 3
+            ? "This Week"
+            : index === 2
+              ? "Last Week"
+              : `${3 - index}w Ago`,
+        value: values.length > 0 ? Math.max(...values) : null,
+      };
+    }).filter((point) => point.value !== null);
+  }
+
+  if (range === "monthly") {
+    const now = new Date();
+    return Array.from({ length: 12 }, (_, index) => {
+      const monthDate = new Date(now.getFullYear(), now.getMonth() - (11 - index), 1);
+      const values = weightedPerformances
+        .filter(
+          ({ date }) =>
+            date.getFullYear() === monthDate.getFullYear() &&
+            date.getMonth() === monthDate.getMonth(),
+        )
+        .map(({ value }) => value);
+      return {
+        key: `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, "0")}`,
+        label: monthDate.toLocaleDateString("en-US", {
+          month: "short",
+          year:
+            monthDate.getFullYear() === now.getFullYear()
+              ? undefined
+              : "2-digit",
+        }),
+        value: values.length > 0 ? Math.max(...values) : null,
+      };
+    }).filter((point) => point.value !== null);
+  }
+
+  const years = [...new Set(weightedPerformances.map(({ date }) => date.getFullYear()))]
+    .sort((a, b) => a - b);
+
+  return years.map((year) => {
+    const values = weightedPerformances
+      .filter(({ date }) => date.getFullYear() === year)
+      .map(({ value }) => value);
+    return {
+      key: String(year),
+      label: String(year),
+      value: values.length > 0 ? Math.max(...values) : null,
+    };
+  });
 }
 
 export async function getPersonalRecords(limit = 5): Promise<PersonalRecord[]> {
@@ -1017,4 +1107,11 @@ function formatDateField(date: Date) {
   return `${String(date.getDate()).padStart(2, "0")}/${String(
     date.getMonth() + 1,
   ).padStart(2, "0")}/${date.getFullYear()}`;
+}
+
+function formatPeriodKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
+    2,
+    "0",
+  )}-${String(date.getDate()).padStart(2, "0")}`;
 }

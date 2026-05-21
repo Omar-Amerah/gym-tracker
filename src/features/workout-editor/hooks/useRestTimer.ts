@@ -126,7 +126,7 @@ export function useRestTimer() {
 
     setPresets((current) => {
       if (current.includes(seconds)) return current;
-      return [...current, seconds].sort((a, b) => a - b);
+      return [...current, seconds];
     });
 
     setSelectedDurationSeconds(seconds);
@@ -165,7 +165,7 @@ export function useRestTimer() {
           ? withoutOldPreset
           : [...withoutOldPreset, newSeconds];
 
-        return withNewPreset.sort((a, b) => a - b);
+        return withNewPreset;
       });
 
       if (selectedDurationSeconds === oldSeconds) {
@@ -174,6 +174,25 @@ export function useRestTimer() {
     },
     [resetTimer, selectedDurationSeconds],
   );
+
+  const movePreset = useCallback((fromIndex: number, toIndex: number) => {
+    setPresets((current) => {
+      if (
+        fromIndex < 0 ||
+        fromIndex >= current.length ||
+        toIndex < 0 ||
+        toIndex >= current.length ||
+        fromIndex === toIndex
+      ) {
+        return current;
+      }
+
+      const next = [...current];
+      const [preset] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, preset);
+      return next;
+    });
+  }, []);
 
   const hasActiveTimer = remainingSeconds > 0;
 
@@ -225,6 +244,7 @@ export function useRestTimer() {
       selectPreset,
       addPreset,
       removePreset,
+      movePreset,
       updatePreset,
     }),
     [
@@ -243,6 +263,7 @@ export function useRestTimer() {
       selectPreset,
       addPreset,
       removePreset,
+      movePreset,
       updatePreset,
     ],
   );

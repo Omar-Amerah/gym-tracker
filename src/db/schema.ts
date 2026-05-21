@@ -467,28 +467,3 @@ function createSeedExercise(
     updatedAt: createdAt,
   };
 }
-
-function createSeedRoutineExercise(
-  id: string,
-  routineId: string,
-  exerciseId: string | null,
-  name: string,
-  sortOrder: number,
-  warmUpSets: number,
-  workingSets: number,
-): RoutineExerciseRecord {
-  const createdAt = "2026-05-18T00:00:00.000Z";
-
-  return {
-    id,
-    routineId,
-    exerciseId,
-    name,
-    notes: "",
-    warmUpSets,
-    workingSets,
-    sortOrder,
-    createdAt,
-    updatedAt: createdAt,
-  };
-}

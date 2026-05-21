@@ -65,10 +65,6 @@ export default function LogScreen() {
     : [];
 
   useEffect(() => {
-    dateRowRefs.current = {};
-  }, [activeDraft?.id, workouts]);
-
-  useEffect(() => {
     if (monthGroups.length === 0) {
       setSelectedJumpMonthKey(null);
       return;
@@ -142,15 +138,14 @@ export default function LogScreen() {
       return;
     }
 
-    // Measure the exact position of the row relative to the scrolling content wrapper.
-    // This perfectly satisfies Fabric's requirement for a native HostComponent ref.
     node.measureLayout(
       contentNode,
       (_x, y) => {
         scrollNode.scrollTo({
-          y: Math.max(0, y - 12), // -12 for top padding
+          y: Math.max(0, y - 12),
           animated: true,
         });
+
         setJumpSheetOpen(false);
       },
       () => {
@@ -193,7 +188,6 @@ export default function LogScreen() {
           style={styles.scroll}
           showsVerticalScrollIndicator={false}
         >
-          {/* Wraps all scrolling content to act as the exact coordinate zero-point */}
           <View ref={contentRef} collapsable={false}>
             {error ? <Text style={styles.stateText}>{error}</Text> : null}
             {!isLoading && !error && !activeDraft && workouts.length === 0 ? (

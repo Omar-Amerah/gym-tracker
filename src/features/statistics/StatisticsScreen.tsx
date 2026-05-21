@@ -1,7 +1,7 @@
 import { useFocusEffect } from "@react-navigation/native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import type { ReactNode } from "react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   LayoutChangeEvent,
@@ -25,16 +25,17 @@ import {
   getExerciseProgressOptions,
   getExerciseProgressStat,
   getExerciseTrend,
-  getBodyweightStats,
+  getExerciseWeightTrend,
   getPersonalRecords,
   getStatsOverview,
   getTopExercises,
   getWeeklyTrainingSummary,
-  type BodyweightStats,
   type ExerciseProgressOption,
   type ExerciseProgressStat,
   type ExerciseTrendMetric,
   type ExerciseTrendPoint,
+  type ExerciseWeightTrendPoint,
+  type ExerciseWeightTrendRange,
   type PersonalRecord,
   type StatsOverview,
   type TopExerciseStat,
@@ -53,7 +54,6 @@ import {
   formatEstimatedOneRepMax,
   formatNumber,
   formatPace,
-  formatRatio,
   formatRecordType,
   formatRecordValue,
   formatTrendMetricLabel,
@@ -78,12 +78,16 @@ export function StatisticsScreen() {
   const [trendMetric, setTrendMetric] =
     useState<ExerciseTrendMetric>("estimated1RM");
   const [trendPoints, setTrendPoints] = useState<ExerciseTrendPoint[]>([]);
+  const [weightTrendRange, setWeightTrendRange] =
+    useState<ExerciseWeightTrendRange>("weekly");
+  const [weightTrendPoints, setWeightTrendPoints] = useState<
+    ExerciseWeightTrendPoint[]
+  >([]);
+  const [isWeightTrendLoading, setIsWeightTrendLoading] = useState(false);
   const [personalRecords, setPersonalRecords] = useState<PersonalRecord[]>([]);
   const [weeklySummary, setWeeklySummary] = useState<WeeklyTrainingSummary[]>(
     [],
   );
-  const [bodyweightStats, setBodyweightStats] =
-    useState<BodyweightStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isProgressLoading, setIsProgressLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -100,14 +104,12 @@ export function StatisticsScreen() {
         nextOptions,
         nextWeeklySummary,
         nextPersonalRecords,
-        nextBodyweightStats,
       ] = await Promise.all([
         getStatsOverview(),
         getTopExercises(5),
         getExerciseProgressOptions(),
         getWeeklyTrainingSummary(4),
         getPersonalRecords(),
-        getBodyweightStats(),
       ]);
 
       const nextSelected =
@@ -144,9 +146,9 @@ export function StatisticsScreen() {
       setProgressStat(nextProgress);
       setTrendMetric(nextTrendMetric);
       setTrendPoints(nextTrend);
+      setWeightTrendPoints([]);
       setWeeklySummary(nextWeeklySummary);
       setPersonalRecords(nextPersonalRecords);
-      setBodyweightStats(nextBodyweightStats);
     } catch (loadError) {
       console.error("Failed to load statistics", loadError);
       setOverview(null);
@@ -155,9 +157,9 @@ export function StatisticsScreen() {
       setSelectedOption(null);
       setProgressStat(null);
       setTrendPoints([]);
+      setWeightTrendPoints([]);
       setWeeklySummary([]);
       setPersonalRecords([]);
-      setBodyweightStats(null);
       setError("Could not load statistics.");
     } finally {
       setIsLoading(false);
@@ -188,18 +190,54 @@ export function StatisticsScreen() {
         metric: nextTrendMetric,
         limit: 20,
       }),
+      getExerciseWeightTrend({
+        exerciseId: option.exerciseId,
+        exerciseName: option.exerciseName,
+        range: weightTrendRange,
+      }),
     ])
-      .then(([nextProgress, nextTrend]) => {
+      .then(([nextProgress, nextTrend, nextWeightTrend]) => {
         setProgressStat(nextProgress);
         setTrendPoints(nextTrend);
+        setWeightTrendPoints(nextWeightTrend);
       })
       .catch((progressError) => {
         console.error("Failed to load exercise progress", progressError);
         setProgressStat(null);
         setTrendPoints([]);
+        setWeightTrendPoints([]);
       })
       .finally(() => setIsProgressLoading(false));
-  }, []);
+  }, [weightTrendRange]);
+
+  useEffect(() => {
+    if (!selectedOption) {
+      setWeightTrendPoints([]);
+      return;
+    }
+
+    let mounted = true;
+    setIsWeightTrendLoading(true);
+    void getExerciseWeightTrend({
+      exerciseId: selectedOption.exerciseId,
+      exerciseName: selectedOption.exerciseName,
+      range: weightTrendRange,
+    })
+      .then((nextPoints) => {
+        if (mounted) setWeightTrendPoints(nextPoints);
+      })
+      .catch((trendError) => {
+        console.error("Failed to load weight trend", trendError);
+        if (mounted) setWeightTrendPoints([]);
+      })
+      .finally(() => {
+        if (mounted) setIsWeightTrendLoading(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [selectedOption, weightTrendRange]);
 
   const hasCompletedWorkouts = (overview?.totalCompletedWorkouts ?? 0) > 0;
 
@@ -264,9 +302,13 @@ export function StatisticsScreen() {
                     detail="/ week"
                   />
                   <StatCard
-                    label="Active"
-                    value={overview.activeDraftWorkoutId ? "In Progress" : "None"}
-                    detail={overview.activeDraftWorkoutName ?? "No draft"}
+                    label="Last Completed"
+                    value={overview.lastCompletedWorkoutName ?? "None"}
+                    detail={
+                      overview.lastCompletedWorkoutDate
+                        ? formatDateShort(overview.lastCompletedWorkoutDate)
+                        : "No completed workouts"
+                    }
                     wide
                   />
                 </View>
@@ -323,18 +365,17 @@ export function StatisticsScreen() {
                     ) : (
                       <ProgressCard stat={progressStat} />
                     )}
+                    <WeightTrendCard
+                      isLoading={isWeightTrendLoading}
+                      onRangeChange={setWeightTrendRange}
+                      points={weightTrendPoints}
+                      range={weightTrendRange}
+                    />
                     <TrendCard metric={trendMetric} points={trendPoints} />
                   </Section>
 
                   <Section title="Personal Records">
                     <PersonalRecordsCard records={personalRecords} />
-                  </Section>
-
-                  <Section title="Bodyweight & Ratios">
-                    <BodyweightCard
-                      bodyweightStats={bodyweightStats}
-                      progressStat={progressStat}
-                    />
                   </Section>
 
                   <Section title="Top Exercises">
@@ -696,6 +737,91 @@ function TrendCard({
   );
 }
 
+function WeightTrendCard({
+  isLoading,
+  onRangeChange,
+  points,
+  range,
+}: {
+  isLoading: boolean;
+  onRangeChange: (range: ExerciseWeightTrendRange) => void;
+  points: ExerciseWeightTrendPoint[];
+  range: ExerciseWeightTrendRange;
+}) {
+  const values = points
+    .map((point) => point.value)
+    .filter((value): value is number => value !== null);
+  const latestValue = values[values.length - 1] ?? null;
+  const bestValue = values.length > 0 ? Math.max(...values) : null;
+  const changeValue =
+    values.length > 1 && latestValue !== null
+      ? latestValue - values[0]
+      : null;
+
+  return (
+    <View style={styles.progressCard}>
+      <View style={styles.cardTitleRow}>
+        <Text style={styles.progressTitle}>Weight Trend</Text>
+      </View>
+
+      <View style={styles.segmentedControl}>
+        {(["weekly", "monthly", "yearly"] as const).map((option) => (
+          <Pressable
+            accessibilityRole="button"
+            key={option}
+            onPress={() => onRangeChange(option)}
+            style={({ pressed }) => [
+              styles.segmentButton,
+              range === option && styles.segmentButtonSelected,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text
+              style={[
+                styles.segmentText,
+                range === option && styles.segmentTextSelected,
+              ]}
+            >
+              {option === "weekly"
+                ? "Weekly"
+                : option === "monthly"
+                  ? "Monthly"
+                  : "Yearly"}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+
+      {isLoading ? (
+        <ActivityIndicator color={colors.accent} />
+      ) : points.length === 0 ? (
+        <Text style={styles.emptyText}>No weight data for this exercise.</Text>
+      ) : points.length < 2 ? (
+        <Text style={styles.emptyText}>
+          Complete this exercise more times with weight to see a trend.
+        </Text>
+      ) : (
+        <>
+          <View style={styles.trendSummaryGrid}>
+            <TrendSummaryItem label="Latest" value={formatWeight(latestValue)} />
+            <TrendSummaryItem label="Best" value={formatWeight(bestValue)} />
+            <TrendSummaryItem
+              label="Change"
+              value={
+                changeValue === null
+                  ? "--"
+                  : `${changeValue > 0 ? "+" : ""}${formatWeight(changeValue)}`
+              }
+            />
+          </View>
+
+          <WeightTrendChart points={points} />
+        </>
+      )}
+    </View>
+  );
+}
+
 function TrendSummaryItem({
   label,
   value,
@@ -709,6 +835,60 @@ function TrendSummaryItem({
       <Text numberOfLines={1} style={styles.trendSummaryValue}>
         {value}
       </Text>
+    </View>
+  );
+}
+
+function WeightTrendChart({ points }: { points: ExerciseWeightTrendPoint[] }) {
+  const values = points
+    .map((point) => point.value)
+    .filter((value): value is number => value !== null);
+  const minValue = Math.min(...values);
+  const maxValue = Math.max(...values);
+  const isFlat = minValue === maxValue;
+  const range = Math.max(1, maxValue - minValue);
+
+  return (
+    <View style={styles.chart}>
+      <View style={styles.chartAxisRow}>
+        <View style={styles.chartYAxis}>
+          <Text style={styles.chartAxisLabel}>{formatWeight(maxValue)}</Text>
+          <Text style={styles.chartAxisLabel}>{formatWeight(minValue)}</Text>
+        </View>
+        <View style={styles.chartPlot}>
+          {points.map((point, index) => {
+            const value = point.value ?? 0;
+            const barHeight = isFlat
+              ? 64
+              : 18 + ((value - minValue) / range) * 92;
+            const isLatest = index === points.length - 1;
+            const isFirst = index === 0;
+
+            return (
+              <View key={point.key} style={styles.chartColumn}>
+                {(isFirst || isLatest) && point.value !== null ? (
+                  <Text numberOfLines={1} style={styles.chartPointLabel}>
+                    {formatWeight(point.value)}
+                  </Text>
+                ) : null}
+                <View
+                  style={[
+                    styles.chartBar,
+                    isLatest && styles.chartBarLatest,
+                    { height: barHeight },
+                  ]}
+                />
+              </View>
+            );
+          })}
+        </View>
+      </View>
+      <View style={styles.chartFooter}>
+        <Text style={styles.chartLabel}>{points[0]?.label ?? ""}</Text>
+        <Text style={styles.chartLabel}>
+          {points[points.length - 1]?.label ?? ""}
+        </Text>
+      </View>
     </View>
   );
 }
@@ -933,71 +1113,6 @@ function PersonalRecordsCard({ records }: { records: PersonalRecord[] }) {
           <Text style={styles.recordValue}>{formatRecordValue(record)}</Text>
         </View>
       ))}
-    </View>
-  );
-}
-
-function BodyweightCard({
-  bodyweightStats,
-  progressStat,
-}: {
-  bodyweightStats: BodyweightStats | null;
-  progressStat: ExerciseProgressStat | null;
-}) {
-  if (!bodyweightStats || bodyweightStats.loggedCount === 0) {
-    return (
-      <View style={styles.emptyCard}>
-        <Text style={styles.emptyText}>
-          Add bodyweight to workouts to see bodyweight trends.
-        </Text>
-      </View>
-    );
-  }
-
-  const latestBodyweight = bodyweightStats.latestBodyweightKg;
-  const oneRepMaxRatio =
-    latestBodyweight && progressStat?.bestEstimatedOneRepMax
-      ? progressStat.bestEstimatedOneRepMax / latestBodyweight
-      : null;
-  const bestWeightRatio =
-    latestBodyweight && progressStat?.bestWeightKg
-      ? progressStat.bestWeightKg / latestBodyweight
-      : null;
-
-  return (
-    <View style={styles.summaryCard}>
-      <SummaryRow
-        label="Latest bodyweight"
-        value={`${formatWeight(latestBodyweight)} - ${formatDateShort(
-          bodyweightStats.latestDate,
-        )}`}
-      />
-      <SummaryRow
-        label="Change"
-        value={
-          bodyweightStats.changeKg !== null
-            ? `${bodyweightStats.changeKg > 0 ? "+" : ""}${formatWeight(
-                bodyweightStats.changeKg,
-              )}`
-            : "--"
-        }
-      />
-      <SummaryRow
-        label="Logged workouts"
-        value={String(bodyweightStats.loggedCount)}
-      />
-      {oneRepMaxRatio !== null ? (
-        <SummaryRow
-          label="Selected 1RM ratio"
-          value={formatRatio(oneRepMaxRatio)}
-        />
-      ) : null}
-      {bestWeightRatio !== null ? (
-        <SummaryRow
-          label="Selected weight ratio"
-          value={formatRatio(bestWeightRatio)}
-        />
-      ) : null}
     </View>
   );
 }
@@ -1407,6 +1522,34 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: spacing.md,
     justifyContent: "space-between",
+  },
+  segmentedControl: {
+    backgroundColor: colors.background,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.xs,
+    padding: spacing.xs,
+  },
+  segmentButton: {
+    alignItems: "center",
+    borderRadius: radius.sm,
+    flex: 1,
+    minHeight: 34,
+    justifyContent: "center",
+  },
+  segmentButtonSelected: {
+    backgroundColor: "rgba(91, 212, 224, 0.14)",
+  },
+  segmentText: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 0,
+  },
+  segmentTextSelected: {
+    color: colors.accent,
   },
   trendSummaryGrid: {
     flexDirection: "row",
