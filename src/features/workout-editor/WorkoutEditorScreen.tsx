@@ -28,9 +28,11 @@ import {
 } from "@/state/activeWorkoutSelection";
 import { backOrReplace } from "@/utils/navigation";
 import { ExerciseOptionsSheet } from "./components/ExerciseOptionsSheet";
-import { FinishWorkoutSummarySheet } from "./components/FinishWorkoutSummarySheet";
 import { ExerciseSection } from "./components/ExerciseSection";
-import { MiniRestTimerBar } from "./components/MiniRestTimerBar";
+import { FinishWorkoutSummarySheet } from "./components/FinishWorkoutSummarySheet";
+import {
+  MiniRestTimerBar
+} from "./components/MiniRestTimerBar";
 import { ReorderExercisesView } from "./components/ReorderExercisesView";
 import { RestTimerModal } from "./components/RestTimerModal";
 import { SetOptionsSheet } from "./components/SetOptionsSheet";
@@ -39,11 +41,12 @@ import { WorkoutDetailsForm } from "./components/WorkoutDetailsForm";
 import { WorkoutHeader } from "./components/WorkoutHeader";
 import { WorkoutOptionsSheet } from "./components/WorkoutOptionsSheet";
 import { WorkoutTimePickerSheet } from "./components/WorkoutTimePickerSheet";
-import { styles } from "./styles";
 import {
   buildFinishedWorkoutSummary,
   type FinishedWorkoutSummary,
 } from "./finishedWorkoutSummary";
+import { useRestTimer } from "./hooks/useRestTimer";
+import { styles } from "./styles";
 import type {
   ActiveWorkout,
   ActiveWorkoutExercise,
@@ -53,10 +56,9 @@ import type {
   WorkoutField,
 } from "./types";
 import { usePreviousPerformance } from "./usePreviousPerformance";
-import { useRestTimer } from "./hooks/useRestTimer";
 import { useWorkoutAutosave } from "./useWorkoutAutosave";
-import { isWorkoutIncomplete } from "./workoutCompletion";
 import { useWorkoutLoader } from "./useWorkoutLoader";
+import { isWorkoutIncomplete } from "./workoutCompletion";
 import { normaliseExerciseType, parseTimeValue } from "./workoutFieldRules";
 import {
   buildWorkoutPayload,
@@ -135,9 +137,12 @@ export function WorkoutEditorScreen() {
   }, [editorKey]);
 
   useEffect(() => {
-    const showSubscription = Keyboard.addListener("keyboardDidShow", (event) => {
-      setKeyboardHeight(event.endCoordinates.height);
-    });
+    const showSubscription = Keyboard.addListener(
+      "keyboardDidShow",
+      (event) => {
+        setKeyboardHeight(event.endCoordinates.height);
+      },
+    );
     const hideSubscription = Keyboard.addListener("keyboardDidHide", () => {
       setKeyboardHeight(0);
     });
@@ -458,7 +463,11 @@ export function WorkoutEditorScreen() {
   };
 
   const requestLeaveWorkout = useCallback(() => {
-    if (!workout || workout.status !== "draft" || !isWorkoutIncomplete(workout)) {
+    if (
+      !workout ||
+      workout.status !== "draft" ||
+      !isWorkoutIncomplete(workout)
+    ) {
       backOrReplace("/routines");
       return;
     }
@@ -843,7 +852,9 @@ export function WorkoutEditorScreen() {
           onFinish={finishWorkout}
           onOpenWorkoutMenu={() => setWorkoutMenuOpen(true)}
           onTimerPress={
-            workout.status === "draft" ? () => setRestTimerOpen(true) : undefined
+            workout.status === "draft"
+              ? () => setRestTimerOpen(true)
+              : undefined
           }
           title={headerTitle}
           workoutStatus={workout.status}
@@ -857,9 +868,7 @@ export function WorkoutEditorScreen() {
               paddingBottom:
                 keyboardHeight > 0
                   ? keyboardHeight + insets.bottom + 180
-                  : 140 +
-                    insets.bottom +
-                    (miniRestTimerVisible ? 112 : 0),
+                  : 140 + insets.bottom + (miniRestTimerVisible ? 112 : 0),
             },
           ]}
           keyboardDismissMode="on-drag"
@@ -979,9 +988,7 @@ export function WorkoutEditorScreen() {
             if (!selectedExercise) return;
             deleteExerciseFromWorkout(selectedExercise.id);
           }}
-          onHistory={() =>
-            openExerciseHistory(selectedExercise)
-          }
+          onHistory={() => openExerciseHistory(selectedExercise)}
           onReorder={openExerciseReorder}
           onReplace={openExerciseReplacement}
           selectedExercise={selectedExercise}

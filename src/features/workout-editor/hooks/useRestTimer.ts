@@ -1,78 +1,102 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Vibration } from "react-native";
 
-const DEFAULT_PRESETS = [50, 40, 30, 60, 90, 120, 150, 180];
-const MAX_TIMER_SECONDS = 59 * 60 + 59;
+export type RestTimerPreset = number;
 
-export function formatTimer(seconds: number) {
-  const safeSeconds = Math.max(0, Math.min(MAX_TIMER_SECONDS, seconds));
+const DEFAULT_PRESETS: RestTimerPreset[] = [50, 40, 30, 60, 90, 120, 150, 180];
+
+export function formatTimer(totalSeconds: number) {
+  const safeSeconds = Math.max(0, Math.floor(totalSeconds));
   const minutes = Math.floor(safeSeconds / 60);
-  const remainder = safeSeconds % 60;
-  return `${String(minutes).padStart(2, "0")}:${String(remainder).padStart(
-    2,
-    "0",
-  )}`;
+  const seconds = safeSeconds % 60;
+
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
 export function useRestTimer() {
-  const [presets, setPresets] = useState(DEFAULT_PRESETS);
-  const [selectedDurationSeconds, setSelectedDurationSeconds] = useState(
-    DEFAULT_PRESETS[0],
-  );
-  const [remainingSeconds, setRemainingSeconds] = useState(
-    DEFAULT_PRESETS[0],
-  );
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const [presets, setPresets] = useState<RestTimerPreset[]>(DEFAULT_PRESETS);
+  const [selectedDurationSeconds, setSelectedDurationSeconds] = useState(50);
+  const [remainingSeconds, setRemainingSeconds] = useState(50);
   const [isRunning, setIsRunning] = useState(false);
   const [endsAt, setEndsAt] = useState<number | null>(null);
 
-  useEffect(() => {
-    if (!isRunning || !endsAt) return;
+  const clearTimerInterval = useCallback(() => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+  }, []);
 
-    const tick = () => {
-      const nextRemaining = Math.max(
-        0,
-        Math.ceil((endsAt - Date.now()) / 1000),
-      );
-      setRemainingSeconds(nextRemaining);
+  const resetToSelectedDuration = useCallback(() => {
+    clearTimerInterval();
+    setIsRunning(false);
+    setEndsAt(null);
+    setRemainingSeconds(selectedDurationSeconds);
+  }, [clearTimerInterval, selectedDurationSeconds]);
 
-      if (nextRemaining <= 0) {
-        setIsRunning(false);
-        setEndsAt(null);
-        Vibration.vibrate(180);
-      }
-    };
+  const stopTimer = useCallback(() => {
+    clearTimerInterval();
+    setIsRunning(false);
+    setEndsAt(null);
+    setRemainingSeconds(0);
+  }, [clearTimerInterval]);
 
-    tick();
-    const interval = setInterval(tick, 1000);
-    return () => clearInterval(interval);
-  }, [endsAt, isRunning]);
+  const resetTimer = useCallback(
+    (seconds?: number) => {
+      const nextSeconds = seconds ?? selectedDurationSeconds;
+
+      clearTimerInterval();
+      setIsRunning(false);
+      setEndsAt(null);
+      setSelectedDurationSeconds(nextSeconds);
+      setRemainingSeconds(nextSeconds);
+    },
+    [clearTimerInterval, selectedDurationSeconds],
+  );
 
   const startTimer = useCallback(
     (seconds?: number) => {
-      const duration = Math.max(
-        1,
-        Math.min(seconds ?? selectedDurationSeconds, MAX_TIMER_SECONDS),
-      );
-      setSelectedDurationSeconds(duration);
-      setRemainingSeconds(duration);
-      setEndsAt(Date.now() + duration * 1000);
+      const nextSeconds =
+        typeof seconds === "number" && seconds > 0
+          ? seconds
+          : remainingSeconds > 0
+            ? remainingSeconds
+            : selectedDurationSeconds;
+
+      clearTimerInterval();
+
+      setSelectedDurationSeconds(nextSeconds);
+      setRemainingSeconds(nextSeconds);
+      setEndsAt(Date.now() + nextSeconds * 1000);
       setIsRunning(true);
     },
-    [selectedDurationSeconds],
+    [clearTimerInterval, remainingSeconds, selectedDurationSeconds],
   );
 
   const pauseTimer = useCallback(() => {
     if (!isRunning || !endsAt) return;
-    setRemainingSeconds(Math.max(0, Math.ceil((endsAt - Date.now()) / 1000)));
+
+    const nextRemainingSeconds = Math.max(
+      0,
+      Math.ceil((endsAt - Date.now()) / 1000),
+    );
+
+    clearTimerInterval();
     setIsRunning(false);
     setEndsAt(null);
-  }, [endsAt, isRunning]);
+    setRemainingSeconds(nextRemainingSeconds);
+  }, [clearTimerInterval, endsAt, isRunning]);
 
   const resumeTimer = useCallback(() => {
-    if (remainingSeconds <= 0) return;
-    setEndsAt(Date.now() + remainingSeconds * 1000);
-    setIsRunning(true);
-  }, [remainingSeconds]);
+    if (remainingSeconds <= 0) {
+      startTimer(selectedDurationSeconds);
+      return;
+    }
+
+    startTimer(remainingSeconds);
+  }, [remainingSeconds, selectedDurationSeconds, startTimer]);
 
   const toggleTimer = useCallback(() => {
     if (isRunning) {
@@ -80,107 +104,148 @@ export function useRestTimer() {
       return;
     }
 
-    if (remainingSeconds > 0) {
-      resumeTimer();
-      return;
-    }
-
-    startTimer();
-  }, [isRunning, pauseTimer, remainingSeconds, resumeTimer, startTimer]);
-
-  const resetTimer = useCallback(
-    (seconds?: number) => {
-      const duration = Math.max(
-        1,
-        Math.min(seconds ?? selectedDurationSeconds, MAX_TIMER_SECONDS),
-      );
-      setSelectedDurationSeconds(duration);
-      setRemainingSeconds(duration);
-      setEndsAt(null);
-      setIsRunning(false);
-    },
-    [selectedDurationSeconds],
-  );
-
-  const stopTimer = useCallback(() => {
-    setRemainingSeconds(0);
-    setEndsAt(null);
-    setIsRunning(false);
-  }, []);
+    resumeTimer();
+  }, [isRunning, pauseTimer, resumeTimer]);
 
   const selectPreset = useCallback(
     (seconds: number) => {
+      if (seconds <= 0) return;
+
+      clearTimerInterval();
+
       setSelectedDurationSeconds(seconds);
-      startTimer(seconds);
+      setRemainingSeconds(seconds);
+      setEndsAt(Date.now() + seconds * 1000);
+      setIsRunning(true);
     },
-    [startTimer],
+    [clearTimerInterval],
   );
 
   const addPreset = useCallback((seconds: number) => {
-    const duration = Math.max(1, Math.min(seconds, MAX_TIMER_SECONDS));
-    setPresets((current) =>
-      current.includes(duration) ? current : [...current, duration],
-    );
-    setSelectedDurationSeconds(duration);
-    setRemainingSeconds(duration);
-  }, []);
+    if (seconds <= 0) return;
 
-  const removePreset = useCallback((seconds: number) => {
-    setPresets((current) => current.filter((preset) => preset !== seconds));
-    setSelectedDurationSeconds((current) =>
-      current === seconds ? DEFAULT_PRESETS[0] : current,
-    );
-    setRemainingSeconds((current) =>
-      current === seconds ? DEFAULT_PRESETS[0] : current,
-    );
-  }, []);
-
-  const updatePreset = useCallback((oldSeconds: number, newSeconds: number) => {
-    const duration = Math.max(1, Math.min(newSeconds, MAX_TIMER_SECONDS));
-    setPresets((current) =>
-      current.map((preset) => (preset === oldSeconds ? duration : preset)),
-    );
-    setSelectedDurationSeconds((current) =>
-      current === oldSeconds ? duration : current,
-    );
-    setRemainingSeconds((current) => (current === oldSeconds ? duration : current));
-  }, []);
-
-  const movePreset = useCallback((fromIndex: number, toIndex: number) => {
     setPresets((current) => {
-      if (
-        fromIndex < 0 ||
-        fromIndex >= current.length ||
-        toIndex < 0 ||
-        toIndex >= current.length ||
-        fromIndex === toIndex
-      ) {
-        return current;
-      }
-
-      const next = [...current];
-      const [preset] = next.splice(fromIndex, 1);
-      next.splice(toIndex, 0, preset);
-      return next;
+      if (current.includes(seconds)) return current;
+      return [...current, seconds].sort((a, b) => a - b);
     });
+
+    setSelectedDurationSeconds(seconds);
+    setRemainingSeconds(seconds);
   }, []);
 
-  return {
-    addPreset,
-    endsAt,
-    isRunning,
-    movePreset,
-    pauseTimer,
-    presets,
-    remainingSeconds,
-    removePreset,
-    resetTimer,
-    resumeTimer,
-    selectPreset,
-    selectedDurationSeconds,
-    startTimer,
-    stopTimer,
-    toggleTimer,
-    updatePreset,
-  };
+  const removePreset = useCallback(
+    (seconds: number) => {
+      setPresets((current) => {
+        const nextPresets = current.filter((preset) => preset !== seconds);
+
+        if (selectedDurationSeconds === seconds) {
+          const fallbackPreset = nextPresets[0] ?? 50;
+          setSelectedDurationSeconds(fallbackPreset);
+          setRemainingSeconds(fallbackPreset);
+          setIsRunning(false);
+          setEndsAt(null);
+          clearTimerInterval();
+        }
+
+        return nextPresets;
+      });
+    },
+    [clearTimerInterval, selectedDurationSeconds],
+  );
+
+  const updatePreset = useCallback(
+    (oldSeconds: number, newSeconds: number) => {
+      if (newSeconds <= 0) return;
+
+      setPresets((current) => {
+        const withoutOldPreset = current.filter(
+          (preset) => preset !== oldSeconds,
+        );
+        const withNewPreset = withoutOldPreset.includes(newSeconds)
+          ? withoutOldPreset
+          : [...withoutOldPreset, newSeconds];
+
+        return withNewPreset.sort((a, b) => a - b);
+      });
+
+      if (selectedDurationSeconds === oldSeconds) {
+        resetTimer(newSeconds);
+      }
+    },
+    [resetTimer, selectedDurationSeconds],
+  );
+
+  const hasActiveTimer = remainingSeconds > 0;
+
+  useEffect(() => {
+    if (!isRunning || !endsAt) {
+      clearTimerInterval();
+      return;
+    }
+
+    clearTimerInterval();
+
+    intervalRef.current = setInterval(() => {
+      const nextRemainingSeconds = Math.max(
+        0,
+        Math.ceil((endsAt - Date.now()) / 1000),
+      );
+
+      setRemainingSeconds(nextRemainingSeconds);
+
+      if (nextRemainingSeconds <= 0) {
+        clearTimerInterval();
+        setIsRunning(false);
+        setEndsAt(null);
+        Vibration.vibrate([0, 250, 120, 250]);
+      }
+    }, 250);
+
+    return clearTimerInterval;
+  }, [clearTimerInterval, endsAt, isRunning]);
+
+  useEffect(() => {
+    return clearTimerInterval;
+  }, [clearTimerInterval]);
+
+  return useMemo(
+    () => ({
+      presets,
+      selectedDurationSeconds,
+      remainingSeconds,
+      isRunning,
+      hasActiveTimer,
+      startTimer,
+      pauseTimer,
+      resumeTimer,
+      toggleTimer,
+      resetTimer,
+      resetToSelectedDuration,
+      stopTimer,
+      selectPreset,
+      addPreset,
+      removePreset,
+      updatePreset,
+    }),
+    [
+      presets,
+      selectedDurationSeconds,
+      remainingSeconds,
+      isRunning,
+      hasActiveTimer,
+      startTimer,
+      pauseTimer,
+      resumeTimer,
+      toggleTimer,
+      resetTimer,
+      resetToSelectedDuration,
+      stopTimer,
+      selectPreset,
+      addPreset,
+      removePreset,
+      updatePreset,
+    ],
+  );
 }
+
+export type RestTimerController = ReturnType<typeof useRestTimer>;

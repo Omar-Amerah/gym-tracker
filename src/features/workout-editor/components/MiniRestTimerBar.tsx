@@ -2,137 +2,136 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { animations } from "@/theme/animations";
+import { formatTimer } from "@/features/workout-editor/hooks/useRestTimer";
 import { colors } from "@/theme/colors";
 import { radius } from "@/theme/radius";
 import { spacing } from "@/theme/spacing";
 
-import { formatTimer } from "../hooks/useRestTimer";
-
 type MiniRestTimerBarProps = {
+  visible: boolean;
+  remainingSeconds: number;
   isRunning: boolean;
   onOpen: () => void;
-  onStop: () => void;
   onToggle: () => void;
-  remainingSeconds: number;
-  visible: boolean;
+  onStop: () => void;
 };
 
 export function MiniRestTimerBar({
+  visible,
+  remainingSeconds,
   isRunning,
   onOpen,
-  onStop,
   onToggle,
-  remainingSeconds,
-  visible,
+  onStop,
 }: MiniRestTimerBarProps) {
   const insets = useSafeAreaInsets();
 
-  if (!visible) return null;
+  if (!visible || remainingSeconds <= 0) return null;
 
   return (
-    <Pressable
-      accessibilityLabel="Open rest timer"
-      accessibilityRole="button"
-      onPress={onOpen}
-      style={[styles.bar, { paddingBottom: insets.bottom + spacing.md }]}
+    <View
+      style={[
+        styles.root,
+        {
+          paddingBottom: Math.max(insets.bottom, spacing.md),
+        },
+      ]}
     >
       <View style={styles.handle} />
+
       <View style={styles.content}>
         <Pressable
           accessibilityLabel={isRunning ? "Pause timer" : "Resume timer"}
           accessibilityRole="button"
-          onPress={(event) => {
-            event.stopPropagation();
-            onToggle();
-          }}
-          style={({ pressed }) => [
-            styles.iconButton,
-            isRunning && styles.pauseButton,
-            pressed && styles.pressed,
-          ]}
+          onPress={onToggle}
+          style={styles.iconButton}
         >
           <MaterialCommunityIcons
             color={colors.background}
             name={isRunning ? "pause" : "play"}
-            size={28}
+            size={22}
           />
         </Pressable>
 
-        <Text style={styles.time}>{formatTimer(remainingSeconds)}</Text>
+        <Pressable
+          accessibilityLabel="Open timer"
+          accessibilityRole="button"
+          onPress={onOpen}
+          style={styles.timeButton}
+        >
+          <Text style={styles.timeText}>{formatTimer(remainingSeconds)}</Text>
+        </Pressable>
 
         <Pressable
           accessibilityLabel="Stop timer"
           accessibilityRole="button"
-          onPress={(event) => {
-            event.stopPropagation();
-            onStop();
-          }}
-          style={({ pressed }) => [
-            styles.closeButton,
-            pressed && styles.pressed,
-          ]}
+          onPress={onStop}
+          style={styles.closeButton}
         >
-          <MaterialCommunityIcons color={colors.accent} name="close" size={25} />
+          <MaterialCommunityIcons
+            color={colors.accent}
+            name="close"
+            size={34}
+          />
         </Pressable>
       </View>
-    </Pressable>
+    </View>
   );
 }
 
+export const MINI_REST_TIMER_BAR_HEIGHT = 104;
+
 const styles = StyleSheet.create({
-  bar: {
+  root: {
     backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderTopLeftRadius: 26,
-    borderTopRightRadius: 26,
-    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
     bottom: 0,
     left: 0,
-    paddingHorizontal: spacing.xxl,
+    paddingHorizontal: spacing.xl,
     paddingTop: spacing.md,
     position: "absolute",
     right: 0,
-    zIndex: 30,
+    zIndex: 60,
   },
   handle: {
     alignSelf: "center",
-    backgroundColor: colors.accentMuted,
+    backgroundColor: colors.textMuted,
     borderRadius: radius.pill,
-    height: 4,
-    marginBottom: spacing.card,
-    width: 42,
+    height: 5,
+    marginBottom: spacing.sm,
+    opacity: 0.75,
+    width: 76,
   },
   content: {
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "space-between",
-    minHeight: 58,
   },
   iconButton: {
     alignItems: "center",
     backgroundColor: colors.accent,
-    borderRadius: radius.lg,
-    height: 48,
+    borderRadius: radius.circle,
+    height: 42,
     justifyContent: "center",
-    width: 48,
+    width: 42,
   },
-  pauseButton: {
-    backgroundColor: "#ff9f43",
+  timeButton: {
+    alignItems: "center",
+    flex: 1,
+    justifyContent: "center",
+  },
+  timeText: {
+    color: colors.textPrimary,
+    fontSize: 38,
+    fontWeight: "600",
+    letterSpacing: -1,
+    lineHeight: 44,
   },
   closeButton: {
     alignItems: "center",
     height: 48,
     justifyContent: "center",
     width: 48,
-  },
-  pressed: {
-    opacity: animations.pressOpacity,
-  },
-  time: {
-    color: colors.textPrimary,
-    fontSize: 34,
-    fontWeight: "800",
-    letterSpacing: 0,
   },
 });

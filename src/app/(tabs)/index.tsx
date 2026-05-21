@@ -29,7 +29,7 @@ export default function LogScreen() {
   const { refreshRoutines } = useRoutines();
 
   const scrollViewRef = useRef<ScrollView | null>(null);
-  const scrollYRef = useRef(0);
+  const contentRef = useRef<View | null>(null);
   const dateRowRefs = useRef<Record<string, View | null>>({});
 
   const [error, setError] = useState<string | null>(null);
@@ -131,31 +131,34 @@ export default function LogScreen() {
     await Promise.all([loadLogData(), refreshRoutines()]);
   }, [loadLogData, refreshRoutines]);
 
-  const scrollToDateKey = useCallback(
-    (dateKey: string) => {
-      const node = dateRowRefs.current[dateKey];
+  const scrollToDateKey = useCallback((dateKey: string) => {
+    const node = dateRowRefs.current[dateKey];
+    const scrollNode = scrollViewRef.current;
+    const contentNode = contentRef.current;
+
+    if (!node || !scrollNode || !contentNode) {
+      console.warn("Missing refs for date jump:", dateKey);
       setJumpSheetOpen(false);
+      return;
+    }
 
-      if (!node) {
-        console.warn("No row ref for date", dateKey);
-        return;
-      }
-
-      setTimeout(() => {
-        node.measureInWindow((_x, y) => {
-          const targetScreenY = insets.top + 100; // roughly below the header
-          const delta = y - targetScreenY;
-          const nextScrollY = Math.max(0, scrollYRef.current + delta);
-
-          scrollViewRef.current?.scrollTo({
-            y: nextScrollY,
-            animated: true,
-          });
+    // Measure the exact position of the row relative to the scrolling content wrapper.
+    // This perfectly satisfies Fabric's requirement for a native HostComponent ref.
+    node.measureLayout(
+      contentNode,
+      (_x, y) => {
+        scrollNode.scrollTo({
+          y: Math.max(0, y - 12), // -12 for top padding
+          animated: true,
         });
-      }, animations.sheetDuration + 40);
-    },
-    [insets.top],
-  );
+        setJumpSheetOpen(false);
+      },
+      () => {
+        console.warn("measureLayout failed for date", dateKey);
+        setJumpSheetOpen(false);
+      },
+    );
+  }, []);
 
   return (
     <SafeAreaView edges={["top"]} style={styles.safeArea}>
@@ -186,96 +189,100 @@ export default function LogScreen() {
 
         <ScrollView
           ref={scrollViewRef}
-          onScroll={(event) => {
-            scrollYRef.current = event.nativeEvent.contentOffset.y;
-          }}
-          scrollEventThrottle={16}
           contentContainerStyle={styles.scrollContent}
           style={styles.scroll}
           showsVerticalScrollIndicator={false}
         >
-          {error ? <Text style={styles.stateText}>{error}</Text> : null}
-          {!isLoading && !error && !activeDraft && workouts.length === 0 ? (
-            <Text style={styles.stateText}>No logged workouts yet.</Text>
-          ) : null}
-          {visibleWorkouts.map((workout, index) => {
-            const previousWorkout =
-              index > 0 ? visibleWorkouts[index - 1] : null;
-            const currentYear = getWorkoutYear(workout);
-            const previousYear = previousWorkout
-              ? getWorkoutYear(previousWorkout)
-              : null;
-            const dateKey = getWorkoutDateKey(workout);
-            const previousDateKey = previousWorkout
-              ? getWorkoutDateKey(previousWorkout)
-              : null;
-            const isFirstOfDate = dateKey !== previousDateKey;
-            const showYearSeparator = index > 0 && currentYear !== previousYear;
+          {/* Wraps all scrolling content to act as the exact coordinate zero-point */}
+          <View ref={contentRef} collapsable={false}>
+            {error ? <Text style={styles.stateText}>{error}</Text> : null}
+            {!isLoading && !error && !activeDraft && workouts.length === 0 ? (
+              <Text style={styles.stateText}>No logged workouts yet.</Text>
+            ) : null}
+            {visibleWorkouts.map((workout, index) => {
+              const previousWorkout =
+                index > 0 ? visibleWorkouts[index - 1] : null;
+              const currentYear = getWorkoutYear(workout);
+              const previousYear = previousWorkout
+                ? getWorkoutYear(previousWorkout)
+                : null;
+              const dateKey = getWorkoutDateKey(workout);
+              const previousDateKey = previousWorkout
+                ? getWorkoutDateKey(previousWorkout)
+                : null;
+              const isFirstOfDate = dateKey !== previousDateKey;
+              const showYearSeparator =
+                index > 0 && currentYear !== previousYear;
 
-            return (
-              <View key={workout.id}>
-                {showYearSeparator ? (
-                  <View style={styles.yearSeparator}>
-                    <View style={styles.yearLine} />
-                    <Text style={styles.yearText}>{currentYear}</Text>
-                    <View style={styles.yearLine} />
-                  </View>
-                ) : null}
+              return (
+                <View key={workout.id}>
+                  {showYearSeparator ? (
+                    <View style={styles.yearSeparator}>
+                      <View style={styles.yearLine} />
+                      <Text style={styles.yearText}>{currentYear}</Text>
+                      <View style={styles.yearLine} />
+                    </View>
+                  ) : null}
 
-                <View
-                  collapsable={false}
-                  ref={(node) => {
-                    if (dateKey && isFirstOfDate) {
-                      dateRowRefs.current[dateKey] = node;
-                    }
-                  }}
-                  style={styles.entry}
-                >
-                  <View style={styles.dateColumn}>
-                    <Text style={styles.weekday}>{workout.weekday}</Text>
-                    <Text style={styles.day}>{workout.day}</Text>
-                    <Text style={styles.month}>{workout.month}</Text>
-                    {index < visibleWorkouts.length - 1 ? (
-                      <View style={styles.timelineLine} />
-                    ) : null}
-                  </View>
-
-                  <Pressable
-                    accessibilityRole="button"
-                    onPress={() => openWorkout(workout)}
-                    style={({ pressed }) => [
-                      styles.card,
-                      pressed && styles.cardPressed,
-                    ]}
+                  <View
+                    collapsable={false}
+                    ref={(node) => {
+                      if (dateKey && isFirstOfDate) {
+                        if (node) {
+                          dateRowRefs.current[dateKey] = node;
+                        } else {
+                          delete dateRowRefs.current[dateKey];
+                        }
+                      }
+                    }}
+                    style={styles.entry}
                   >
-                    <View style={styles.cardHeader}>
-                      <Text style={styles.workoutTitle}>{workout.name}</Text>
-                      {workout.status === "draft" ? (
-                        <Text style={styles.draftBadge}>In Progress</Text>
-                      ) : (
-                        <Text style={styles.duration}>
-                          {workout.durationMinutes === null
-                            ? "-- min"
-                            : `${workout.durationMinutes} min`}
-                        </Text>
-                      )}
+                    <View style={styles.dateColumn}>
+                      <Text style={styles.weekday}>{workout.weekday}</Text>
+                      <Text style={styles.day}>{workout.day}</Text>
+                      <Text style={styles.month}>{workout.month}</Text>
+                      {index < visibleWorkouts.length - 1 ? (
+                        <View style={styles.timelineLine} />
+                      ) : null}
                     </View>
 
-                    <View style={styles.exerciseList}>
-                      {workout.exercises.map((exercise, exerciseIndex) => (
-                        <Text
-                          key={`${exercise}-${exerciseIndex}`}
-                          style={styles.exerciseText}
-                        >
-                          {exercise}
-                        </Text>
-                      ))}
-                    </View>
-                  </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => openWorkout(workout)}
+                      style={({ pressed }) => [
+                        styles.card,
+                        pressed && styles.cardPressed,
+                      ]}
+                    >
+                      <View style={styles.cardHeader}>
+                        <Text style={styles.workoutTitle}>{workout.name}</Text>
+                        {workout.status === "draft" ? (
+                          <Text style={styles.draftBadge}>In Progress</Text>
+                        ) : (
+                          <Text style={styles.duration}>
+                            {workout.durationMinutes === null
+                              ? "-- min"
+                              : `${workout.durationMinutes} min`}
+                          </Text>
+                        )}
+                      </View>
+
+                      <View style={styles.exerciseList}>
+                        {workout.exercises.map((exercise, exerciseIndex) => (
+                          <Text
+                            key={`${exercise}-${exerciseIndex}`}
+                            style={styles.exerciseText}
+                          >
+                            {exercise}
+                          </Text>
+                        ))}
+                      </View>
+                    </Pressable>
+                  </View>
                 </View>
-              </View>
-            );
-          })}
+              );
+            })}
+          </View>
         </ScrollView>
 
         {activeDraft ? (

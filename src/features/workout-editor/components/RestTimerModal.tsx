@@ -1,5 +1,5 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Alert,
   Modal,
@@ -10,461 +10,647 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 
-import { animations } from "@/theme/animations";
+import {
+  formatTimer,
+  type RestTimerController,
+} from "@/features/workout-editor/hooks/useRestTimer";
 import { colors } from "@/theme/colors";
 import { radius } from "@/theme/radius";
 import { spacing } from "@/theme/spacing";
 
-import { EditTimersModal } from "./EditTimersModal";
-import { formatTimer, useRestTimer } from "../hooks/useRestTimer";
-
-type RestTimer = ReturnType<typeof useRestTimer>;
-
 type RestTimerModalProps = {
-  onClose: () => void;
-  timer: RestTimer;
   visible: boolean;
+  onClose: () => void;
+  timer: RestTimerController;
 };
 
 export function RestTimerModal({
+  visible,
   onClose,
   timer,
-  visible,
 }: RestTimerModalProps) {
-  const [editOpen, setEditOpen] = useState(false);
-  const [addOpen, setAddOpen] = useState(false);
-  const [minutes, setMinutes] = useState("");
-  const [seconds, setSeconds] = useState("");
+  const insets = useSafeAreaInsets();
 
-  const displaySeconds =
-    timer.remainingSeconds > 0
-      ? timer.remainingSeconds
-      : timer.selectedDurationSeconds;
+  const [addTimerOpen, setAddTimerOpen] = useState(false);
+  const [editTimersOpen, setEditTimersOpen] = useState(false);
+  const [timerMenuOpen, setTimerMenuOpen] = useState(false);
+  const [minutesInput, setMinutesInput] = useState("");
+  const [secondsInput, setSecondsInput] = useState("");
 
-  function saveAddedTimer() {
-    const totalSeconds =
-      Number.parseInt(minutes || "0", 10) * 60 +
-      Number.parseInt(seconds || "0", 10);
+  const countdownLabel = useMemo(
+    () => formatTimer(timer.remainingSeconds),
+    [timer.remainingSeconds],
+  );
 
-    if (!Number.isFinite(totalSeconds) || totalSeconds <= 0) {
+  const saveNewTimer = () => {
+    const minutes = Number(minutesInput.trim() || "0");
+    const seconds = Number(secondsInput.trim() || "0");
+
+    if (Number.isNaN(minutes) || Number.isNaN(seconds)) {
+      Alert.alert(
+        "Invalid timer",
+        "Enter a valid number of minutes and seconds.",
+      );
+      return;
+    }
+
+    const totalSeconds = minutes * 60 + seconds;
+
+    if (totalSeconds <= 0) {
       Alert.alert("Invalid timer", "Timer must be longer than 0 seconds.");
       return;
     }
 
-    if (totalSeconds > 59 * 60 + 59) {
-      Alert.alert("Invalid timer", "Timer must be 59:59 or shorter.");
+    if (totalSeconds > 3599) {
+      Alert.alert("Timer too long", "Keep rest timers under 60 minutes.");
       return;
     }
 
     timer.addPreset(totalSeconds);
-    setMinutes("");
-    setSeconds("");
-    setAddOpen(false);
-  }
+    timer.selectPreset(totalSeconds);
+
+    setMinutesInput("");
+    setSecondsInput("");
+    setAddTimerOpen(false);
+  };
+
+  const onMainTimerButtonPress = () => {
+    if (timer.isRunning) {
+      timer.resetToSelectedDuration();
+      return;
+    }
+
+    timer.startTimer(
+      timer.remainingSeconds > 0
+        ? timer.remainingSeconds
+        : timer.selectedDurationSeconds,
+    );
+  };
 
   return (
-    <Modal
-      animationType="fade"
-      onRequestClose={onClose}
-      transparent={false}
-      visible={visible}
-    >
-      <SafeAreaView style={styles.screen}>
-        <View style={styles.handle} />
-        <Pressable
-          accessibilityLabel="Close rest timer"
-          accessibilityRole="button"
-          onPress={onClose}
-          style={styles.closeButton}
-        >
-          <MaterialCommunityIcons color={colors.accent} name="close" size={27} />
-        </Pressable>
-
-        <View style={styles.timerPanel}>
-          <Text adjustsFontSizeToFit numberOfLines={1} style={styles.time}>
-            {formatTimer(displaySeconds)}
-          </Text>
+    <>
+      <Modal
+        animationType="slide"
+        onRequestClose={onClose}
+        presentationStyle="fullScreen"
+        visible={visible}
+      >
+        <SafeAreaView style={styles.modalRoot}>
           <Pressable
-            accessibilityLabel={timer.isRunning ? "Pause timer" : "Start timer"}
+            accessibilityLabel="Minimise timer"
             accessibilityRole="button"
-            onPress={timer.toggleTimer}
-            style={({ pressed }) => [
-              styles.playButton,
-              timer.isRunning && styles.pauseButton,
-              pressed && styles.pressed,
-            ]}
+            onPress={onClose}
+            style={styles.handlePressArea}
+          >
+            <View style={styles.handle} />
+          </Pressable>
+
+          <Pressable
+            accessibilityLabel="Close timer"
+            accessibilityRole="button"
+            onPress={onClose}
+            style={styles.closeButton}
           >
             <MaterialCommunityIcons
-              color={colors.background}
-              name={timer.isRunning ? "pause" : "play"}
-              size={46}
+              color={colors.accent}
+              name="close"
+              size={34}
             />
           </Pressable>
-        </View>
 
-        <View style={styles.bottomPanel}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Timers</Text>
+          <View style={styles.countdownArea}>
+            <Text
+              adjustsFontSizeToFit
+              numberOfLines={1}
+              style={styles.countdown}
+            >
+              {countdownLabel}
+            </Text>
+
             <Pressable
-              accessibilityLabel="Edit timers"
+              accessibilityLabel={
+                timer.isRunning ? "Reset timer" : "Start timer"
+              }
               accessibilityRole="button"
-              onPress={() => setEditOpen(true)}
-              style={styles.menuButton}
+              onPress={onMainTimerButtonPress}
+              style={({ pressed }) => [
+                styles.playButton,
+                timer.isRunning && styles.stopButton,
+                pressed && styles.buttonPressed,
+              ]}
             >
               <MaterialCommunityIcons
-                color={colors.accent}
-                name="dots-vertical"
-                size={24}
+                color={colors.background}
+                name={timer.isRunning ? "stop" : "play"}
+                size={38}
               />
             </Pressable>
           </View>
 
-          <ScrollView
-            contentContainerStyle={styles.presetRow}
-            horizontal
-            showsHorizontalScrollIndicator={false}
+          <View
+            style={[
+              styles.timerDock,
+              { paddingBottom: Math.max(insets.bottom, spacing.lg) },
+            ]}
           >
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => setAddOpen(true)}
-              style={styles.addChip}
+            <View style={styles.timerDockHeader}>
+              <Text style={styles.timerDockTitle}>Timers</Text>
+
+              <Pressable
+                accessibilityLabel="Timer options"
+                accessibilityRole="button"
+                onPress={() => setTimerMenuOpen((current) => !current)}
+                style={styles.timerDockMenuButton}
+              >
+                <MaterialCommunityIcons
+                  color={colors.textSecondary}
+                  name="dots-vertical"
+                  size={26}
+                />
+              </Pressable>
+            </View>
+
+            {timerMenuOpen ? (
+              <View style={styles.timerMenu}>
+                <Pressable
+                  onPress={() => {
+                    setTimerMenuOpen(false);
+                    setEditTimersOpen(true);
+                  }}
+                  style={styles.timerMenuRow}
+                >
+                  <Text style={styles.timerMenuText}>Edit Timers</Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => {
+                    setTimerMenuOpen(false);
+                    timer.resetToSelectedDuration();
+                  }}
+                  style={styles.timerMenuRow}
+                >
+                  <Text style={styles.timerMenuText}>Reset Timer</Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => {
+                    setTimerMenuOpen(false);
+                    timer.stopTimer();
+                  }}
+                  style={styles.timerMenuRow}
+                >
+                  <Text style={styles.timerMenuDangerText}>Stop Timer</Text>
+                </Pressable>
+              </View>
+            ) : null}
+
+            <ScrollView
+              horizontal
+              contentContainerStyle={styles.presetList}
+              showsHorizontalScrollIndicator={false}
             >
-              <Text style={styles.addChipText}>+ Add Timer</Text>
-            </Pressable>
-            {timer.presets.map((preset) => (
               <Pressable
                 accessibilityRole="button"
-                key={preset}
-                onPress={() => timer.selectPreset(preset)}
+                onPress={() => setAddTimerOpen(true)}
                 style={({ pressed }) => [
-                  styles.presetChip,
-                  timer.selectedDurationSeconds === preset &&
-                    styles.presetChipSelected,
-                  pressed && styles.pressed,
+                  styles.addTimerChip,
+                  pressed && styles.buttonPressed,
                 ]}
               >
-                <Text
-                  style={[
-                    styles.presetText,
-                    timer.selectedDurationSeconds === preset &&
-                      styles.presetTextSelected,
-                  ]}
-                >
-                  {formatTimer(preset)}
-                </Text>
+                <MaterialCommunityIcons
+                  color={colors.background}
+                  name="plus"
+                  size={24}
+                />
+                <Text style={styles.addTimerChipText}>Add Timer</Text>
+              </Pressable>
+
+              {timer.presets.map((preset) => {
+                const isSelected = preset === timer.selectedDurationSeconds;
+
+                return (
+                  <Pressable
+                    accessibilityRole="button"
+                    key={preset}
+                    onPress={() => timer.selectPreset(preset)}
+                    style={({ pressed }) => [
+                      styles.presetChip,
+                      isSelected && styles.presetChipSelected,
+                      pressed && styles.buttonPressed,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.presetChipText,
+                        isSelected && styles.presetChipTextSelected,
+                      ]}
+                    >
+                      {formatTimer(preset)}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </SafeAreaView>
+      </Modal>
+
+      <Modal
+        animationType="fade"
+        onRequestClose={() => setAddTimerOpen(false)}
+        transparent
+        visible={addTimerOpen}
+      >
+        <View style={styles.overlay}>
+          <View style={styles.addTimerCard}>
+            <Text style={styles.addTimerTitle}>Add Timer</Text>
+
+            <View style={styles.addTimerInputs}>
+              <View style={styles.addTimerInputGroup}>
+                <Text style={styles.addTimerLabel}>min</Text>
+                <TextInput
+                  keyboardType="number-pad"
+                  onChangeText={setMinutesInput}
+                  placeholder="0"
+                  placeholderTextColor={colors.textMuted}
+                  style={styles.addTimerInput}
+                  value={minutesInput}
+                />
+              </View>
+
+              <View style={styles.addTimerInputGroup}>
+                <Text style={styles.addTimerLabel}>sec</Text>
+                <TextInput
+                  keyboardType="number-pad"
+                  onChangeText={setSecondsInput}
+                  placeholder="50"
+                  placeholderTextColor={colors.textMuted}
+                  style={styles.addTimerInput}
+                  value={secondsInput}
+                />
+              </View>
+            </View>
+
+            <View style={styles.addTimerActions}>
+              <Pressable
+                onPress={() => setAddTimerOpen(false)}
+                style={styles.secondaryButton}
+              >
+                <Text style={styles.secondaryButtonText}>Cancel</Text>
+              </Pressable>
+
+              <Pressable onPress={saveNewTimer} style={styles.primaryButton}>
+                <Text style={styles.primaryButtonText}>Save</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        animationType="slide"
+        onRequestClose={() => setEditTimersOpen(false)}
+        presentationStyle="fullScreen"
+        visible={editTimersOpen}
+      >
+        <SafeAreaView style={styles.editRoot}>
+          <View style={styles.editHeader}>
+            <Pressable
+              accessibilityLabel="Close edit timers"
+              accessibilityRole="button"
+              onPress={() => setEditTimersOpen(false)}
+              style={styles.editCloseButton}
+            >
+              <MaterialCommunityIcons
+                color={colors.accent}
+                name="close"
+                size={34}
+              />
+            </Pressable>
+
+            <Text style={styles.editTitle}>Edit Timers</Text>
+          </View>
+
+          <ScrollView contentContainerStyle={styles.editList}>
+            {timer.presets.map((preset) => (
+              <Pressable
+                key={preset}
+                onLongPress={() => {
+                  Alert.alert(formatTimer(preset), "Timer options", [
+                    {
+                      text: "Delete",
+                      style: "destructive",
+                      onPress: () => timer.removePreset(preset),
+                    },
+                    { text: "Cancel", style: "cancel" },
+                  ]);
+                }}
+                style={styles.editRow}
+              >
+                <Text style={styles.editRowText}>{formatTimer(preset)}</Text>
+                <MaterialCommunityIcons
+                  color={colors.accent}
+                  name="minus"
+                  size={26}
+                />
               </Pressable>
             ))}
           </ScrollView>
 
-          <View style={styles.secondaryActions}>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => timer.resetTimer()}
-              style={styles.secondaryAction}
-            >
-              <Text style={styles.secondaryActionText}>Reset Timer</Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              onPress={timer.stopTimer}
-              style={styles.secondaryAction}
-            >
-              <Text style={styles.secondaryActionText}>Stop Timer</Text>
-            </Pressable>
-          </View>
-        </View>
-
-        <AddTimerPanel
-          minutes={minutes}
-          onCancel={() => {
-            setAddOpen(false);
-            setMinutes("");
-            setSeconds("");
-          }}
-          onChangeMinutes={setMinutes}
-          onChangeSeconds={setSeconds}
-          onSave={saveAddedTimer}
-          seconds={seconds}
-          visible={addOpen}
-        />
-
-        <EditTimersModal
-          onClose={() => setEditOpen(false)}
-          timer={timer}
-          visible={editOpen}
-        />
-      </SafeAreaView>
-    </Modal>
-  );
-}
-
-type AddTimerPanelProps = {
-  minutes: string;
-  onCancel: () => void;
-  onChangeMinutes: (value: string) => void;
-  onChangeSeconds: (value: string) => void;
-  onSave: () => void;
-  seconds: string;
-  visible: boolean;
-};
-
-function AddTimerPanel({
-  minutes,
-  onCancel,
-  onChangeMinutes,
-  onChangeSeconds,
-  onSave,
-  seconds,
-  visible,
-}: AddTimerPanelProps) {
-  if (!visible) return null;
-
-  return (
-    <View style={styles.addPanel}>
-      <Text style={styles.addTitle}>Add Timer</Text>
-      <View style={styles.timeFields}>
-        <TextInput
-          keyboardType="number-pad"
-          maxLength={2}
-          onChangeText={(value) => onChangeMinutes(value.replace(/\D/g, ""))}
-          placeholder="00"
-          placeholderTextColor={colors.textMuted}
-          style={styles.timeInput}
-          value={minutes}
-        />
-        <Text style={styles.colon}>:</Text>
-        <TextInput
-          keyboardType="number-pad"
-          maxLength={2}
-          onChangeText={(value) => onChangeSeconds(value.replace(/\D/g, ""))}
-          placeholder="50"
-          placeholderTextColor={colors.textMuted}
-          style={styles.timeInput}
-          value={seconds}
-        />
-      </View>
-      <View style={styles.addActions}>
-        <Pressable onPress={onCancel} style={styles.cancelButton}>
-          <Text style={styles.cancelText}>Cancel</Text>
-        </Pressable>
-        <Pressable onPress={onSave} style={styles.saveButton}>
-          <Text style={styles.saveText}>Save</Text>
-        </Pressable>
-      </View>
-    </View>
+          <Pressable
+            accessibilityLabel="Add timer"
+            accessibilityRole="button"
+            onPress={() => setAddTimerOpen(true)}
+            style={[
+              styles.editAddButton,
+              { bottom: Math.max(insets.bottom + spacing.lg, 28) },
+            ]}
+          >
+            <MaterialCommunityIcons
+              color={colors.background}
+              name="plus"
+              size={34}
+            />
+          </Pressable>
+        </SafeAreaView>
+      </Modal>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    backgroundColor: colors.background,
+  modalRoot: {
     flex: 1,
+    backgroundColor: colors.surface,
+  },
+  handlePressArea: {
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 76,
   },
   handle: {
     alignSelf: "center",
-    backgroundColor: colors.accentMuted,
+    backgroundColor: colors.textMuted,
     borderRadius: radius.pill,
-    height: 4,
-    marginTop: spacing.card,
-    width: 42,
+    height: 6,
+    marginTop: -spacing.sm,
+    opacity: 0.75,
+    transform: [{ rotate: "-1deg" }],
+    width: 88,
   },
   closeButton: {
     alignItems: "center",
-    height: 48,
+    height: 54,
     justifyContent: "center",
     position: "absolute",
-    right: spacing.xxl,
-    top: spacing.xxl,
-    width: 48,
-    zIndex: 2,
+    right: spacing.xl,
+    top: spacing.xl,
+    width: 54,
+    zIndex: 5,
   },
-  timerPanel: {
+  countdownArea: {
     alignItems: "center",
     flex: 1,
     justifyContent: "center",
-    paddingHorizontal: spacing.xxl,
+    paddingHorizontal: spacing.xl,
   },
-  time: {
+  countdown: {
     color: colors.textPrimary,
-    fontSize: 104,
+    fontSize: 118,
     fontWeight: "800",
-    letterSpacing: 0,
+    letterSpacing: -3,
+    lineHeight: 134,
+    textAlign: "center",
+    width: "100%",
   },
   playButton: {
     alignItems: "center",
     backgroundColor: colors.accent,
-    borderRadius: radius.xl,
+    borderRadius: radius.lg,
     height: 84,
     justifyContent: "center",
-    marginTop: spacing.xxl,
+    marginTop: spacing.xxxl,
     width: 84,
   },
-  pauseButton: {
+  stopButton: {
     backgroundColor: "#ff9f43",
   },
-  pressed: {
-    opacity: animations.pressOpacity,
+  buttonPressed: {
+    opacity: 0.72,
   },
-  bottomPanel: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
+  timerDock: {
+    backgroundColor: colors.surfacePressed,
+    borderTopColor: colors.borderMuted,
     borderTopWidth: StyleSheet.hairlineWidth,
-    gap: spacing.card,
-    padding: spacing.xxl,
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.lg,
   },
-  sectionHeader: {
+  timerDockHeader: {
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "space-between",
+    marginBottom: spacing.md,
   },
-  sectionTitle: {
+  timerDockTitle: {
     color: colors.textPrimary,
     fontSize: 22,
-    fontWeight: "800",
-    letterSpacing: 0,
+    fontWeight: "700",
   },
-  menuButton: {
+  timerDockMenuButton: {
     alignItems: "center",
-    height: 40,
+    height: 42,
     justifyContent: "center",
-    width: 40,
+    width: 42,
   },
-  presetRow: {
-    gap: spacing.md,
-    paddingRight: spacing.xxl,
-  },
-  addChip: {
-    alignItems: "center",
+  timerMenu: {
     backgroundColor: colors.background,
-    borderColor: colors.border,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    justifyContent: "center",
-    minHeight: 42,
-    paddingHorizontal: spacing.xxl,
+    borderColor: colors.borderMuted,
+    borderRadius: radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginBottom: spacing.md,
+    overflow: "hidden",
   },
-  addChipText: {
-    color: colors.accent,
-    fontSize: 14,
+  timerMenuRow: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+  timerMenuText: {
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  timerMenuDangerText: {
+    color: "#ff9b9b",
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  presetList: {
+    alignItems: "center",
+    gap: spacing.md,
+    paddingRight: spacing.xl,
+  },
+  addTimerChip: {
+    alignItems: "center",
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
+    borderRadius: radius.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: "row",
+    gap: spacing.sm,
+    minHeight: 42,
+    paddingHorizontal: 18,
+  },
+  addTimerChipText: {
+    color: colors.background,
+    fontSize: 17,
     fontWeight: "800",
   },
   presetChip: {
     alignItems: "center",
-    backgroundColor: colors.background,
-    borderColor: colors.border,
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
     borderRadius: radius.pill,
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
     justifyContent: "center",
     minHeight: 42,
-    minWidth: 74,
-    paddingHorizontal: spacing.xxl,
+    paddingHorizontal: 20,
   },
   presetChipSelected: {
-    borderColor: colors.accent,
-    backgroundColor: "rgba(91, 212, 224, 0.12)",
+    backgroundColor: colors.textPrimary,
+    borderColor: colors.textPrimary,
   },
-  presetText: {
-    color: colors.textPrimary,
-    fontSize: 14,
+  presetChipText: {
+    color: colors.background,
+    fontSize: 17,
     fontWeight: "800",
   },
-  presetTextSelected: {
-    color: colors.accent,
+  presetChipTextSelected: {
+    color: colors.background,
   },
-  secondaryActions: {
-    flexDirection: "row",
-    gap: spacing.card,
-  },
-  secondaryAction: {
+  overlay: {
     alignItems: "center",
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.72)",
     flex: 1,
-    minHeight: 42,
     justifyContent: "center",
+    paddingHorizontal: spacing.xl,
   },
-  secondaryActionText: {
+  addTimerCard: {
+    backgroundColor: colors.surface,
+    borderColor: colors.borderMuted,
+    borderRadius: radius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: spacing.xl,
+    width: "100%",
+  },
+  addTimerTitle: {
+    color: colors.textPrimary,
+    fontSize: 24,
+    fontWeight: "800",
+    marginBottom: spacing.xl,
+  },
+  addTimerInputs: {
+    flexDirection: "row",
+    gap: spacing.lg,
+  },
+  addTimerInputGroup: {
+    flex: 1,
+  },
+  addTimerLabel: {
     color: colors.textSecondary,
     fontSize: 14,
     fontWeight: "700",
+    marginBottom: spacing.sm,
   },
-  addPanel: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    bottom: 0,
-    gap: spacing.card,
-    left: 0,
-    padding: spacing.xxl,
-    position: "absolute",
-    right: 0,
-    zIndex: 3,
-  },
-  addTitle: {
-    color: colors.textPrimary,
-    fontSize: 20,
-    fontWeight: "800",
-    letterSpacing: 0,
-  },
-  timeFields: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "center",
-  },
-  timeInput: {
+  addTimerInput: {
     backgroundColor: colors.background,
     borderColor: colors.border,
     borderRadius: radius.md,
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
     color: colors.textPrimary,
-    fontSize: 28,
-    fontWeight: "800",
-    height: 58,
-    textAlign: "center",
-    width: 78,
+    fontSize: 24,
+    fontWeight: "700",
+    minHeight: 58,
+    paddingHorizontal: spacing.lg,
   },
-  colon: {
-    color: colors.textPrimary,
-    fontSize: 28,
-    fontWeight: "800",
-    marginHorizontal: spacing.md,
-  },
-  addActions: {
+  addTimerActions: {
     flexDirection: "row",
-    gap: spacing.card,
+    gap: spacing.md,
+    justifyContent: "flex-end",
+    marginTop: spacing.xl,
   },
-  cancelButton: {
-    alignItems: "center",
+  secondaryButton: {
     borderColor: colors.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    flex: 1,
-    justifyContent: "center",
-    minHeight: 46,
+    borderRadius: radius.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
   },
-  cancelText: {
+  secondaryButtonText: {
     color: colors.textPrimary,
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: "700",
   },
-  saveButton: {
+  primaryButton: {
+    backgroundColor: colors.accent,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+  },
+  primaryButtonText: {
+    color: colors.background,
+    fontSize: 16,
+    fontWeight: "800",
+  },
+  editRoot: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  editHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.lg,
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.xl,
+  },
+  editCloseButton: {
+    alignItems: "center",
+    height: 52,
+    justifyContent: "center",
+    width: 52,
+  },
+  editTitle: {
+    color: colors.textPrimary,
+    fontSize: 32,
+    fontWeight: "500",
+  },
+  editList: {
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.xl,
+  },
+  editRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    minHeight: 66,
+  },
+  editRowText: {
+    color: colors.textPrimary,
+    fontSize: 24,
+    fontWeight: "500",
+  },
+  editAddButton: {
     alignItems: "center",
     backgroundColor: colors.accent,
-    borderRadius: radius.md,
-    flex: 1,
+    borderRadius: radius.lg,
+    height: 74,
     justifyContent: "center",
-    minHeight: 46,
-  },
-  saveText: {
-    color: colors.background,
-    fontSize: 15,
-    fontWeight: "800",
+    position: "absolute",
+    right: spacing.xl,
+    width: 74,
   },
 });
