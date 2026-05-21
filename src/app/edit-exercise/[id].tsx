@@ -2,18 +2,16 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
-    Alert,
-    PanResponder,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  Alert,
+  PanResponder,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from "react-native";
-import {
-    SafeAreaView,
-} from "react-native-safe-area-context";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import { PrimaryPillButton } from "@/components/action-buttons";
 import { AppHeader } from "@/components/app-header";
@@ -42,9 +40,7 @@ const EXERCISE_TYPES = [
   "Time Only",
 ];
 
-const SINGLE_ARM_OPTIONS = ["No", "Yes"];
-
-type PickerType = "category" | "type" | "arm" | null;
+type PickerType = "category" | "type" | null;
 
 const SLIDER_STEP = 5;
 const SLIDER_MIN = 0;
@@ -59,7 +55,6 @@ export default function EditExerciseScreen() {
   const [name, setName] = useState("");
   const [category, setCategory] = useState("");
   const [exerciseType, setExerciseType] = useState("Strength: Weight, Reps");
-  const [singleArm, setSingleArm] = useState("No");
   const [multiplier, setMultiplier] = useState(100);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -81,7 +76,6 @@ export default function EditExerciseScreen() {
           setName(exercise.name);
           setCategory(exercise.category);
           setExerciseType(exercise.exerciseType ?? "Strength: Weight, Reps");
-          setSingleArm(exercise.singleArm ?? "No");
           setMultiplier(exercise.bodyweightMultiplier);
         }
       })
@@ -132,7 +126,6 @@ export default function EditExerciseScreen() {
 
   const getPickerOptions = () => {
     if (activePicker === "category") return categories.map((item) => item.name);
-    if (activePicker === "arm") return SINGLE_ARM_OPTIONS;
     return EXERCISE_TYPES;
   };
 
@@ -144,7 +137,7 @@ export default function EditExerciseScreen() {
       name,
       category,
       exerciseType,
-      singleArm,
+      singleArm: "No",
       bodyweightMultiplier: multiplier,
     });
     router.back();
@@ -174,7 +167,6 @@ export default function EditExerciseScreen() {
 
   const handlePickerSelect = (item: string) => {
     if (activePicker === "category") setCategory(item);
-    if (activePicker === "arm") setSingleArm(item);
     if (activePicker === "type") setExerciseType(item);
 
     setActivePicker(null);
@@ -182,7 +174,6 @@ export default function EditExerciseScreen() {
 
   const renderPickerLabel = () => {
     if (activePicker === "category") return "Select Category";
-    if (activePicker === "arm") return "Single Leg / Single Arm";
     if (activePicker === "type") return "Select Exercise Type";
     return "";
   };
@@ -256,27 +247,6 @@ export default function EditExerciseScreen() {
               />
             </View>
           </Pressable>
-
-          <View style={styles.inputGroup}>
-            <Pressable
-              onPress={() => setActivePicker("arm")}
-              style={({ pressed }) => pressed && styles.pressed}
-            >
-              <Text style={styles.floatingLabel}>Single Leg / Single Arm</Text>
-              <View style={styles.selectBox}>
-                <Text style={styles.selectText}>{singleArm}</Text>
-                <MaterialCommunityIcons
-                  name="menu-down"
-                  size={24}
-                  color={colors.textSecondary}
-                />
-              </View>
-            </Pressable>
-
-            <Text style={styles.hintText}>
-              Count weight twice in statistics
-            </Text>
-          </View>
 
           {isBodyweight && (
             <View style={styles.multiplierContainer}>
@@ -375,8 +345,7 @@ export default function EditExerciseScreen() {
             style={styles.sheetScroll}
           >
             {getPickerOptions().map((item) => {
-              const selected =
-                item === category || item === exerciseType || item === singleArm;
+              const selected = item === category || item === exerciseType;
 
               return (
                 <Pressable
@@ -475,14 +444,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     flex: 1,
     paddingRight: 12,
-  },
-
-  hintText: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    marginTop: 8,
-    paddingHorizontal: 4,
-    lineHeight: 17,
   },
 
   multiplierContainer: {
@@ -604,9 +565,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
 
-
-
-
   sheetTitle: {
     color: colors.textPrimary,
     fontSize: 22,
@@ -657,5 +615,3 @@ const styles = StyleSheet.create({
     opacity: 0.72,
   },
 });
-
-
