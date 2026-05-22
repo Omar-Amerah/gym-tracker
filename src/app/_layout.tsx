@@ -2,9 +2,15 @@ import { DarkTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
-import { StyleSheet, View } from 'react-native';
+import { useEffect } from 'react';
+import { AppState, StyleSheet, View, type AppStateStatus } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import {
+  cancelWorkoutReminderNotifications,
+  prepareWorkoutReminderNotificationsForActiveDraft,
+  scheduleWorkoutReminderNotificationIfNeeded,
+} from '@/notifications/workoutReminderNotifications';
 import { RoutinesProvider } from '@/state/routines';
 import { animations } from '@/theme/animations';
 import { colors } from '@/theme/colors';
@@ -24,6 +30,28 @@ const navigationTheme = {
 void SystemUI.setBackgroundColorAsync(colors.background);
 
 export default function RootLayout() {
+  useEffect(() => {
+    const handleAppStateChange = (nextAppState: AppStateStatus) => {
+      if (nextAppState === 'active') {
+        void cancelWorkoutReminderNotifications({ dismissPresented: true });
+        void prepareWorkoutReminderNotificationsForActiveDraft();
+        return;
+      }
+
+      if (nextAppState === 'background') {
+        void scheduleWorkoutReminderNotificationIfNeeded();
+      }
+    };
+
+    handleAppStateChange(AppState.currentState);
+    const subscription = AppState.addEventListener(
+      'change',
+      handleAppStateChange,
+    );
+
+    return () => subscription.remove();
+  }, []);
+
   return (
     <SafeAreaProvider style={styles.appRoot}>
       <RoutinesProvider>

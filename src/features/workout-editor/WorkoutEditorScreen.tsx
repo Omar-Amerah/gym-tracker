@@ -24,6 +24,10 @@ import {
 import type { ExerciseRecord } from "@/db/schema";
 import { deleteWorkout, markWorkoutCompleted } from "@/db/workoutsRepository";
 import {
+  cancelWorkoutReminderNotifications,
+  prepareWorkoutReminderNotifications,
+} from "@/notifications/workoutReminderNotifications";
+import {
   registerActiveWorkoutAddExerciseHandler,
   registerActiveWorkoutReplacementHandler,
 } from "@/state/activeWorkoutSelection";
@@ -137,6 +141,12 @@ export function WorkoutEditorScreen() {
   useEffect(() => {
     setValidationAttempted(false);
   }, [editorKey]);
+
+  useEffect(() => {
+    if (workout?.status === "draft") {
+      void prepareWorkoutReminderNotifications();
+    }
+  }, [workout?.id, workout?.status]);
 
   useEffect(() => {
     setHasOpenedRestTimer(false);
@@ -422,6 +432,7 @@ export function WorkoutEditorScreen() {
         : null;
       await markWorkoutCompleted(candidate.id, completedPayload);
       markPayloadAsSaved(completedPayload);
+      void cancelWorkoutReminderNotifications({ dismissPresented: true });
       if (navigateAfterSave) {
         setFinishSummary(summary);
       }
@@ -632,6 +643,9 @@ export function WorkoutEditorScreen() {
             setWorkout(null);
             void deleteWorkout(workoutIdToDelete)
               .then(() => {
+                void cancelWorkoutReminderNotifications({
+                  dismissPresented: true,
+                });
                 routeToLog();
               })
               .catch((error) => {
